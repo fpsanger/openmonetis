@@ -6,6 +6,7 @@ import {
 	RiBarChart2Line,
 	RiCalendarEventLine,
 	RiFileChartLine,
+	RiFlightTakeoffLine,
 	RiGroupLine,
 	RiPriceTag3Line,
 	RiSparklingLine,
@@ -88,6 +89,16 @@ export const NAV_SECTIONS: NavSection[] = [
 				href: "/anotacoes",
 				label: "anotações",
 				icon: <RiTodoLine className="size-4" />,
+			},
+		],
+	},
+	{
+		label: "Milhas",
+		items: [
+			{
+				href: "/milhas",
+				label: "milhas",
+				icon: <RiFlightTakeoffLine className="size-4" />,
 			},
 		],
 	},
