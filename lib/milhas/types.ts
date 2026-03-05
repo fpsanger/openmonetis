@@ -19,6 +19,8 @@ export type MilhasTransactionFilter = "30" | "90" | "all";
 export type MilhasProgramData = {
 	id: string;
 	name: string;
+	/** Market reference value per 1 000 miles in BRL, or null if not configured. */
+	referenceValuePer1000Brl: string | null;
 };
 
 export type MilhasAccountData = {
@@ -27,6 +29,8 @@ export type MilhasAccountData = {
 	programId: string;
 	programName: string;
 	balance: number;
+	/** Inherited from the program; null if not configured. */
+	referenceValuePer1000Brl: string | null;
 };
 
 export type MilhasTransactionData = {
@@ -36,5 +40,15 @@ export type MilhasTransactionData = {
 	occurredAt: Date;
 	expiresAt: Date | null;
 	description: string | null;
+	/**
+	 * BRL paid to acquire these miles (credit transactions only).
+	 * Stored as numeric string from DB; null means free miles.
+	 */
+	costBrl: string | null;
+	/**
+	 * Cash-equivalent value of a redemption in BRL (REDEEM only).
+	 * Used to compute redemption value-per-1 000 and ROI.
+	 */
+	cashEquivalentBrl: string | null;
 	createdAt: Date;
 };

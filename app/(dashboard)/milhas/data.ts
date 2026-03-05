@@ -30,7 +30,7 @@ export async function fetchMilhasProgramsForUser(
 	userId: string,
 ): Promise<MilhasProgramData[]> {
 	const rows = await db.query.milhasPrograms.findMany({
-		columns: { id: true, name: true },
+		columns: { id: true, name: true, referenceValuePer1000Brl: true },
 		where: eq(milhasPrograms.userId, userId),
 		orderBy: [milhasPrograms.name],
 	});
@@ -46,6 +46,7 @@ export async function fetchMilhasAccountsWithBalance(
 			name: milhasAccounts.name,
 			programId: milhasAccounts.programId,
 			programName: milhasPrograms.name,
+			referenceValuePer1000Brl: milhasPrograms.referenceValuePer1000Brl,
 			balance: sql<number>`
 				COALESCE(
 					SUM(
@@ -73,6 +74,7 @@ export async function fetchMilhasAccountsWithBalance(
 			milhasAccounts.name,
 			milhasAccounts.programId,
 			milhasPrograms.name,
+			milhasPrograms.referenceValuePer1000Brl,
 		)
 		.orderBy(milhasPrograms.name, milhasAccounts.name);
 
@@ -89,6 +91,7 @@ export async function fetchMilhasAccountById(
 			name: milhasAccounts.name,
 			programId: milhasAccounts.programId,
 			programName: milhasPrograms.name,
+			referenceValuePer1000Brl: milhasPrograms.referenceValuePer1000Brl,
 			balance: sql<number>`
 				COALESCE(
 					SUM(
@@ -121,6 +124,7 @@ export async function fetchMilhasAccountById(
 			milhasAccounts.name,
 			milhasAccounts.programId,
 			milhasPrograms.name,
+			milhasPrograms.referenceValuePer1000Brl,
 		)
 		.limit(1);
 
@@ -155,6 +159,8 @@ export async function fetchMilhasTransactions(
 		occurredAt: row.occurredAt,
 		expiresAt: row.expiresAt,
 		description: row.description,
+		costBrl: row.costBrl,
+		cashEquivalentBrl: row.cashEquivalentBrl,
 		createdAt: row.createdAt,
 	}));
 }
