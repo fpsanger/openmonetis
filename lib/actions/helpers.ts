@@ -1,20 +1,27 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
-import type { ActionResult } from "./types";
 import { errorResult } from "./types";
+import type { ActionResult } from "./types";
+
+// Re-export so action files can import ActionResult from a single place
+export type { ActionResult };
 
 /**
- * Handles errors in server actions consistently
+ * Handles errors in server actions consistently.
+ * Generic so it is assignable to any ActionResult<T> return type.
  * @param error - The error to handle
  * @returns ActionResult with error message
  */
-export function handleActionError(error: unknown): ActionResult {
+export function handleActionError<T = void>(error: unknown): ActionResult<T> {
 	if (error instanceof z.ZodError) {
-		return errorResult(error.issues[0]?.message ?? "Dados inválidos.");
+		return {
+			success: false,
+			error: error.issues[0]?.message ?? "Dados inválidos.",
+		};
 	}
 
 	console.error("[ActionError]", error);
-	return errorResult("Ocorreu um erro inesperado. Tente novamente.");
+	return { success: false, error: "Ocorreu um erro inesperado. Tente novamente." };
 }
 
 /**

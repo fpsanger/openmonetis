@@ -9,12 +9,17 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { deleteMilhasTransactionAction } from "@/app/(dashboard)/milhas/actions";
 import {
+	MILHAS_FILTER_OPTIONS,
 	MILHAS_TRANSACTION_TYPE_LABEL,
-	type MilhasAccountData,
-	type MilhasTransactionData,
-	type MilhasTransactionFilter,
-	type MilhasTransactionType,
-} from "@/app/(dashboard)/milhas/data";
+	MILHAS_TYPE_BADGE_VARIANT,
+	CREDIT_TYPES,
+} from "@/lib/milhas/constants";
+import type {
+	MilhasAccountData,
+	MilhasTransactionData,
+	MilhasTransactionFilter,
+	MilhasTransactionType,
+} from "@/lib/milhas/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,24 +34,6 @@ import {
 import { toast } from "sonner";
 import { MilhasTransactionDialog } from "./milhas-transaction-dialog";
 
-const CREDIT_TYPES = new Set(["EARN", "ADJUST"]);
-
-const TYPE_BADGE_VARIANT: Record<
-	string,
-	"default" | "destructive" | "secondary" | "outline" | "success" | "info"
-> = {
-	EARN: "success",
-	ADJUST: "info",
-	REDEEM: "destructive",
-	EXPIRE: "destructive",
-	TRANSFER: "secondary",
-};
-
-const FILTER_OPTIONS: { label: string; value: MilhasTransactionFilter }[] = [
-	{ label: "30 dias", value: "30" },
-	{ label: "90 dias", value: "90" },
-	{ label: "Todas", value: "all" },
-];
 
 interface MilhasAccountDetailProps {
 	account: MilhasAccountData;
@@ -116,7 +103,7 @@ export function MilhasAccountDetail({
 					<CardTitle className="text-base">Transações</CardTitle>
 					{/* Filter buttons */}
 					<div className="flex gap-1">
-						{FILTER_OPTIONS.map((opt) => (
+						{MILHAS_FILTER_OPTIONS.map((opt) => (
 							<Button
 								key={opt.value}
 								variant={filter === opt.value ? "secondary" : "ghost"}
@@ -160,7 +147,7 @@ export function MilhasAccountDetail({
 											<TableCell>
 												<Badge
 													variant={
-														TYPE_BADGE_VARIANT[tx.type as MilhasTransactionType] ??
+														MILHAS_TYPE_BADGE_VARIANT[tx.type as MilhasTransactionType] ??
 														"outline"
 													}
 												>

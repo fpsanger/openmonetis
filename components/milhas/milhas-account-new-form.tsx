@@ -8,7 +8,7 @@ import {
 	createMilhasAccountAction,
 	createMilhasProgramAction,
 } from "@/app/(dashboard)/milhas/actions";
-import type { MilhasProgramData } from "@/app/(dashboard)/milhas/data";
+import type { MilhasProgramData } from "@/lib/milhas/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {

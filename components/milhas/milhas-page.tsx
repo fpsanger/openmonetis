@@ -2,7 +2,7 @@
 
 import { RiAddLine, RiArrowRightSLine } from "@remixicon/react";
 import Link from "next/link";
-import type { MilhasAccountData } from "@/app/(dashboard)/milhas/data";
+import type { MilhasAccountData } from "@/lib/milhas/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {

@@ -6,8 +6,8 @@ import { createMilhasTransactionAction } from "@/app/(dashboard)/milhas/actions"
 import {
 	MILHAS_TRANSACTION_TYPE_LABEL,
 	MILHAS_TRANSACTION_TYPES,
-	type MilhasTransactionType,
-} from "@/app/(dashboard)/milhas/data";
+} from "@/lib/milhas/constants";
+import type { MilhasTransactionType } from "@/lib/milhas/types";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,

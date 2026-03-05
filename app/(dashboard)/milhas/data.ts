@@ -3,71 +3,28 @@ import {
 	milhasAccounts,
 	milhasPrograms,
 	milhasTransactions,
+	type MilhasTransaction,
 } from "@/db/schema";
 import { db } from "@/lib/db";
-
-// ─── Transaction types ───────────────────────────────────────────────────────
-
-export const MILHAS_TRANSACTION_TYPES = [
-	"EARN",
-	"REDEEM",
-	"TRANSFER",
-	"EXPIRE",
-	"ADJUST",
-] as const;
-
-export type MilhasTransactionType = (typeof MILHAS_TRANSACTION_TYPES)[number];
-
-export const MILHAS_TRANSACTION_TYPE_LABEL: Record<
+import { CREDIT_TYPES } from "@/lib/milhas/constants";
+import type {
+	MilhasAccountData,
+	MilhasProgramData,
+	MilhasTransactionData,
+	MilhasTransactionFilter,
 	MilhasTransactionType,
-	string
-> = {
-	EARN: "Ganho",
-	REDEEM: "Resgate",
-	TRANSFER: "Transferência",
-	EXPIRE: "Expiração",
-	ADJUST: "Ajuste",
+} from "@/lib/milhas/types";
+
+// Re-export types so existing page imports keep working
+export type {
+	MilhasAccountData,
+	MilhasProgramData,
+	MilhasTransactionData,
+	MilhasTransactionFilter,
+	MilhasTransactionType,
 };
 
-/**
- * Types that increase balance; all others decrease.
- * Balance = SUM(amount) for credits − SUM(amount) for debits
- */
-export const CREDIT_TYPES: ReadonlySet<MilhasTransactionType> = new Set([
-	"EARN",
-	"ADJUST",
-]);
-
-// ─── Data shapes ─────────────────────────────────────────────────────────────
-
-export type MilhasProgramData = {
-	id: string;
-	name: string;
-};
-
-export type MilhasAccountData = {
-	id: string;
-	name: string;
-	programId: string;
-	programName: string;
-	balance: number;
-};
-
-export type MilhasTransactionData = {
-	id: string;
-	type: MilhasTransactionType;
-	amount: number;
-	occurredAt: Date;
-	expiresAt: Date | null;
-	description: string | null;
-	createdAt: Date;
-};
-
-// ─── Transaction filter ───────────────────────────────────────────────────────
-
-export type MilhasTransactionFilter = "30" | "90" | "all";
-
-// ─── Fetch functions ─────────────────────────────────────────────────────────
+// ─── Fetch functions ──────────────────────────────────────────────────────────
 
 export async function fetchMilhasProgramsForUser(
 	userId: string,
@@ -191,7 +148,7 @@ export async function fetchMilhasTransactions(
 		orderBy: [desc(milhasTransactions.occurredAt)],
 	});
 
-	return rows.map((row) => ({
+	return (rows as MilhasTransaction[]).map((row): MilhasTransactionData => ({
 		id: row.id,
 		type: row.type as MilhasTransactionType,
 		amount: row.amount,
@@ -201,3 +158,6 @@ export async function fetchMilhasTransactions(
 		createdAt: row.createdAt,
 	}));
 }
+
+// Keep CREDIT_TYPES exported for any legacy usage (prefer lib/milhas/constants)
+export { CREDIT_TYPES };

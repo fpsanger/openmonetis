@@ -4,8 +4,8 @@ import { getUserId } from "@/lib/auth/server";
 import {
 	fetchMilhasAccountById,
 	fetchMilhasTransactions,
-	type MilhasTransactionFilter,
 } from "../../data";
+import type { MilhasTransactionFilter } from "@/lib/milhas/types";
 
 interface PageProps {
 	params: Promise<{ id: string }>;
