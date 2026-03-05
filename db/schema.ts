@@ -653,6 +653,90 @@ export const lancamentos = pgTable(
 	}),
 );
 
+// ─── Milhas (Miles Tracking) ────────────────────────────────────────────────
+
+export const milhasPrograms = pgTable(
+	"miles_programs",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		userIdIdx: index("miles_programs_user_id_idx").on(table.userId),
+	}),
+);
+
+export const milhasAccounts = pgTable(
+	"miles_accounts",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		programId: uuid("program_id")
+			.notNull()
+			.references(() => milhasPrograms.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		userIdIdx: index("miles_accounts_user_id_idx").on(table.userId),
+		userIdProgramIdIdx: index("miles_accounts_user_id_program_id_idx").on(
+			table.userId,
+			table.programId,
+		),
+	}),
+);
+
+export const milhasTransactions = pgTable(
+	"miles_transactions",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => milhasAccounts.id, { onDelete: "cascade" }),
+		type: text("type").notNull(), // EARN | REDEEM | TRANSFER | EXPIRE | ADJUST
+		amount: integer("amount").notNull(),
+		occurredAt: date("occurred_at", { mode: "date" }).notNull(),
+		expiresAt: date("expires_at", { mode: "date" }),
+		description: text("description"),
+		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		userIdIdx: index("miles_transactions_user_id_idx").on(table.userId),
+		accountIdOccurredAtIdx: index(
+			"miles_transactions_account_id_occurred_at_idx",
+		).on(table.accountId, table.occurredAt),
+		userIdOccurredAtIdx: index(
+			"miles_transactions_user_id_occurred_at_idx",
+		).on(table.userId, table.occurredAt),
+		accountIdExpiresAtIdx: index(
+			"miles_transactions_account_id_expires_at_idx",
+		).on(table.accountId, table.expiresAt),
+	}),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const userRelations = relations(user, ({ many, one }) => ({
 	accounts: many(account),
 	sessions: many(session),
@@ -667,6 +751,9 @@ export const userRelations = relations(user, ({ many, one }) => ({
 	antecipacoesParcelas: many(antecipacoesParcelas),
 	tokensApi: many(tokensApi),
 	preLancamentos: many(preLancamentos),
+	milhasPrograms: many(milhasPrograms),
+	milhasAccounts: many(milhasAccounts),
+	milhasTransactions: many(milhasTransactions),
 }));
 
 export const accountRelations = relations(account, ({ one }) => ({
@@ -844,6 +931,46 @@ export const antecipacoesParcRelations = relations(
 	}),
 );
 
+export const milhasProgramsRelations = relations(
+	milhasPrograms,
+	({ one, many }) => ({
+		user: one(user, {
+			fields: [milhasPrograms.userId],
+			references: [user.id],
+		}),
+		accounts: many(milhasAccounts),
+	}),
+);
+
+export const milhasAccountsRelations = relations(
+	milhasAccounts,
+	({ one, many }) => ({
+		user: one(user, {
+			fields: [milhasAccounts.userId],
+			references: [user.id],
+		}),
+		program: one(milhasPrograms, {
+			fields: [milhasAccounts.programId],
+			references: [milhasPrograms.id],
+		}),
+		transactions: many(milhasTransactions),
+	}),
+);
+
+export const milhasTransactionsRelations = relations(
+	milhasTransactions,
+	({ one }) => ({
+		user: one(user, {
+			fields: [milhasTransactions.userId],
+			references: [user.id],
+		}),
+		account: one(milhasAccounts, {
+			fields: [milhasTransactions.accountId],
+			references: [milhasAccounts.id],
+		}),
+	}),
+);
+
 export type User = typeof user.$inferSelect;
 export type NewUser = typeof user.$inferInsert;
 export type Account = typeof account.$inferSelect;
@@ -867,3 +994,9 @@ export type TokenApi = typeof tokensApi.$inferSelect;
 export type NovoTokenApi = typeof tokensApi.$inferInsert;
 export type PreLancamento = typeof preLancamentos.$inferSelect;
 export type NovoPreLancamento = typeof preLancamentos.$inferInsert;
+export type MilhasProgram = typeof milhasPrograms.$inferSelect;
+export type NewMilhasProgram = typeof milhasPrograms.$inferInsert;
+export type MilhasAccount = typeof milhasAccounts.$inferSelect;
+export type NewMilhasAccount = typeof milhasAccounts.$inferInsert;
+export type MilhasTransaction = typeof milhasTransactions.$inferSelect;
+export type NewMilhasTransaction = typeof milhasTransactions.$inferInsert;

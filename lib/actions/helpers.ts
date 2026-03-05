@@ -30,6 +30,7 @@ export const revalidateConfig = {
 	anotacoes: ["/anotacoes", "/anotacoes/arquivadas", "/dashboard"],
 	lancamentos: ["/lancamentos", "/contas"],
 	inbox: ["/pre-lancamentos", "/lancamentos", "/dashboard"],
+	milhas: ["/milhas"],
 } as const;
 
 /** Entities whose mutations should invalidate the dashboard cache */
