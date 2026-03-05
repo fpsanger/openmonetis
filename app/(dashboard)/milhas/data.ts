@@ -1,3 +1,7 @@
+/**
+ * data.ts — SERVER ONLY. Do not import from client components.
+ * All shared types and constants live in constants.ts instead.
+ */
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import {
 	milhasAccounts,
@@ -5,67 +9,22 @@ import {
 	milhasTransactions,
 } from "@/db/schema";
 import { db } from "@/lib/db";
-
-// ─── Transaction types ───────────────────────────────────────────────────────
-
-export const MILHAS_TRANSACTION_TYPES = [
-	"EARN",
-	"REDEEM",
-	"TRANSFER",
-	"EXPIRE",
-	"ADJUST",
-] as const;
-
-export type MilhasTransactionType = (typeof MILHAS_TRANSACTION_TYPES)[number];
-
-export const MILHAS_TRANSACTION_TYPE_LABEL: Record<
+import type {
+	MilhasAccountData,
+	MilhasTransactionData,
+	MilhasTransactionFilter,
 	MilhasTransactionType,
-	string
-> = {
-	EARN: "Ganho",
-	REDEEM: "Resgate",
-	TRANSFER: "Transferência",
-	EXPIRE: "Expiração",
-	ADJUST: "Ajuste",
-};
+	MilhasProgramData,
+} from "./constants";
 
-/**
- * Types that increase balance; all others decrease.
- * Balance = SUM(amount) for credits − SUM(amount) for debits
- */
-export const CREDIT_TYPES: ReadonlySet<MilhasTransactionType> = new Set([
-	"EARN",
-	"ADJUST",
-]);
-
-// ─── Data shapes ─────────────────────────────────────────────────────────────
-
-export type MilhasProgramData = {
-	id: string;
-	name: string;
-};
-
-export type MilhasAccountData = {
-	id: string;
-	name: string;
-	programId: string;
-	programName: string;
-	balance: number;
-};
-
-export type MilhasTransactionData = {
-	id: string;
-	type: MilhasTransactionType;
-	amount: number;
-	occurredAt: Date;
-	expiresAt: Date | null;
-	description: string | null;
-	createdAt: Date;
-};
-
-// ─── Transaction filter ───────────────────────────────────────────────────────
-
-export type MilhasTransactionFilter = "30" | "90" | "all";
+// Re-export types so server components can still import from one place
+export type {
+	MilhasAccountData,
+	MilhasTransactionData,
+	MilhasTransactionFilter,
+	MilhasTransactionType,
+	MilhasProgramData,
+} from "./constants";
 
 // ─── Fetch functions ─────────────────────────────────────────────────────────
 

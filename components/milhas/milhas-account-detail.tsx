@@ -14,7 +14,7 @@ import {
 	type MilhasTransactionData,
 	type MilhasTransactionFilter,
 	type MilhasTransactionType,
-} from "@/app/(dashboard)/milhas/data";
+} from "@/app/(dashboard)/milhas/constants";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

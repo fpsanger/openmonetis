@@ -15,7 +15,7 @@ import {
 import { getUser } from "@/lib/auth/server";
 import { db } from "@/lib/db";
 import { uuidSchema } from "@/lib/schemas/common";
-import { MILHAS_TRANSACTION_TYPES } from "./data";
+import { MILHAS_TRANSACTION_TYPES } from "./constants";
 
 // ─── Programs ─────────────────────────────────────────────────────────────────
 
