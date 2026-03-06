@@ -2,8 +2,11 @@ import { notFound } from "next/navigation";
 import { MilhasAccountDetail } from "@/components/milhas/milhas-account-detail";
 import { getUserId } from "@/lib/auth/server";
 import {
+	fetchAccountCostBasis,
+	fetchAccountExpiration90,
 	fetchMilhasAccountById,
 	fetchMilhasTransactions,
+	fetchRedemptionMetrics,
 } from "../../data";
 import type { MilhasTransactionFilter } from "@/lib/milhas/types";
 
@@ -20,10 +23,14 @@ export default async function Page({ params, searchParams }: PageProps) {
 		rawFilter === "90" || rawFilter === "all" ? rawFilter : "30";
 
 	const userId = await getUserId();
-	const [account, transactions] = await Promise.all([
-		fetchMilhasAccountById(userId, id),
-		fetchMilhasTransactions(userId, id, filter),
-	]);
+	const [account, transactions, costBasis, expiring90, redemptionMetrics] =
+		await Promise.all([
+			fetchMilhasAccountById(userId, id),
+			fetchMilhasTransactions(userId, id, filter),
+			fetchAccountCostBasis(userId, id),
+			fetchAccountExpiration90(userId, id),
+			fetchRedemptionMetrics(userId, id),
+		]);
 
 	if (!account) {
 		notFound();
@@ -35,6 +42,9 @@ export default async function Page({ params, searchParams }: PageProps) {
 				account={account}
 				transactions={transactions}
 				filter={filter}
+				costBasis={costBasis}
+				expiring90={expiring90}
+				redemptionMetrics={redemptionMetrics}
 			/>
 		</main>
 	);

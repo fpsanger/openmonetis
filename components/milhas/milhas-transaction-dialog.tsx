@@ -4,6 +4,7 @@ import { RiAddLine } from "@remixicon/react";
 import { useState, useTransition } from "react";
 import { createMilhasTransactionAction } from "@/app/(dashboard)/milhas/actions";
 import {
+	CREDIT_TYPES,
 	MILHAS_TRANSACTION_TYPE_LABEL,
 	MILHAS_TRANSACTION_TYPES,
 } from "@/lib/milhas/constants";
@@ -38,6 +39,10 @@ const EMPTY_FORM = {
 	occurredAt: new Date().toISOString().split("T")[0],
 	expiresAt: "",
 	description: "",
+	/** BRL paid to acquire these miles (shown only for EARN / ADJUST). */
+	costBrl: "",
+	/** Cash-equivalent value of the redemption (shown only for REDEEM). */
+	cashEquivalentBrl: "",
 };
 
 export function MilhasTransactionDialog({
@@ -52,6 +57,16 @@ export function MilhasTransactionDialog({
 		value: (typeof EMPTY_FORM)[K],
 	) {
 		setForm((prev) => ({ ...prev, [field]: value }));
+	}
+
+	function handleTypeChange(v: string) {
+		setForm((prev) => ({
+			...prev,
+			type: v as MilhasTransactionType,
+			// Clear monetary fields when switching type to avoid stale values
+			costBrl: "",
+			cashEquivalentBrl: "",
+		}));
 	}
 
 	function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -69,6 +84,8 @@ export function MilhasTransactionDialog({
 				occurredAt: form.occurredAt,
 				expiresAt: form.expiresAt || null,
 				description: form.description || null,
+				costBrl: form.costBrl || undefined,
+				cashEquivalentBrl: form.cashEquivalentBrl || undefined,
 			});
 			if (result.success) {
 				toast.success(result.message);
@@ -79,6 +96,8 @@ export function MilhasTransactionDialog({
 			}
 		});
 	}
+
+	const isCredit = CREDIT_TYPES.has(form.type);
 
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
@@ -95,12 +114,7 @@ export function MilhasTransactionDialog({
 				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
 					<div className="flex flex-col gap-2">
 						<Label htmlFor="tx-type">Tipo</Label>
-						<Select
-							value={form.type}
-							onValueChange={(v) =>
-								updateField("type", v as MilhasTransactionType)
-							}
-						>
+						<Select value={form.type} onValueChange={handleTypeChange}>
 							<SelectTrigger id="tx-type">
 								<SelectValue />
 							</SelectTrigger>
@@ -165,6 +179,48 @@ export function MilhasTransactionDialog({
 							maxLength={255}
 						/>
 					</div>
+
+					{/* Custo (BRL) — credit types only */}
+					{isCredit && (
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="tx-cost">
+								Custo{" "}
+								<span className="text-muted-foreground font-normal">
+									(R$, opcional)
+								</span>
+							</Label>
+							<Input
+								id="tx-cost"
+								type="text"
+								inputMode="decimal"
+								placeholder="Ex.: 50,00"
+								value={form.costBrl}
+								onChange={(e) => updateField("costBrl", e.target.value)}
+							/>
+						</div>
+					)}
+
+					{/* Cash equivalent — REDEEM only */}
+					{form.type === "REDEEM" && (
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="tx-cash-eq">
+								Valor equivalente{" "}
+								<span className="text-muted-foreground font-normal">
+									(R$, opcional)
+								</span>
+							</Label>
+							<Input
+								id="tx-cash-eq"
+								type="text"
+								inputMode="decimal"
+								placeholder="Ex.: 120,00"
+								value={form.cashEquivalentBrl}
+								onChange={(e) =>
+									updateField("cashEquivalentBrl", e.target.value)
+								}
+							/>
+						</div>
+					)}
 
 					<DialogFooter>
 						<Button type="submit" disabled={isPending} className="w-full">
