@@ -8,7 +8,7 @@ import {
 	createMilhasAccountAction,
 	createMilhasProgramAction,
 } from "@/app/(dashboard)/milhas/actions";
-import type { MilhasProgramData } from "@/app/(dashboard)/milhas/constants";
+import type { MilhasProgramData } from "@/lib/milhas/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -71,8 +71,12 @@ export function MilhasAccountNewForm({ programs }: MilhasAccountNewFormProps) {
 		startProgramTransition(async () => {
 			const result = await createMilhasProgramAction({ name: newProgramName });
 			if (result.success && result.data) {
+				const newProgram: MilhasProgramData = {
+					...result.data,
+					referenceValuePer1000Brl: null, // new programs start with no reference value
+				};
 				setLocalPrograms((prev) =>
-					[...prev, result.data!].sort((a, b) =>
+					[...prev, newProgram].sort((a, b) =>
 						a.name.localeCompare(b.name),
 					),
 				);

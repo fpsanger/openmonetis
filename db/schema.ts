@@ -663,6 +663,11 @@ export const milhasPrograms = pgTable(
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
 		name: text("name").notNull(),
+		/** Market reference value for 1 000 miles of this program in BRL (optional). */
+		referenceValuePer1000Brl: numeric("reference_value_per_1000_brl", {
+			precision: 12,
+			scale: 2,
+		}),
 		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
 			.notNull()
 			.defaultNow(),
@@ -717,6 +722,16 @@ export const milhasTransactions = pgTable(
 		occurredAt: date("occurred_at", { mode: "date" }).notNull(),
 		expiresAt: date("expires_at", { mode: "date" }),
 		description: text("description"),
+		/**
+		 * BRL paid to acquire these miles (for EARN / positive ADJUST only).
+		 * Null means free miles (card accrual, bonus, etc.).
+		 */
+		costBrl: numeric("cost_brl", { precision: 12, scale: 2 }),
+		/**
+		 * Cash equivalent value of a redemption in BRL (for REDEEM only).
+		 * Used to compute value-per-1 000 and ROI.
+		 */
+		cashEquivalentBrl: numeric("cash_equivalent_brl", { precision: 12, scale: 2 }),
 		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
 			.notNull()
 			.defaultNow(),

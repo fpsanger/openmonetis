@@ -134,6 +134,13 @@
       "when": 1772730216752,
       "tag": "0018_skinny_winter_soldier",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1772752259040,
+      "tag": "0019_simple_madame_web",
+      "breakpoints": true
     }
   ]
 }

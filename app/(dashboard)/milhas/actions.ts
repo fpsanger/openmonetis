@@ -14,8 +14,27 @@ import {
 } from "@/lib/actions/helpers";
 import { getUser } from "@/lib/auth/server";
 import { db } from "@/lib/db";
+import { MILHAS_TRANSACTION_TYPES } from "@/lib/milhas/constants";
 import { uuidSchema } from "@/lib/schemas/common";
-import { MILHAS_TRANSACTION_TYPES } from "./constants";
+
+// ─── Shared monetary-value schema ─────────────────────────────────────────────
+
+/**
+ * Accepts an optional positive decimal string (comma or period as separator).
+ * Normalises the separator to a period and returns the value as a string
+ * (compatible with Drizzle's numeric columns) or null when the field is blank.
+ */
+const brlAmountSchema = z
+	.string()
+	.trim()
+	.optional()
+	.transform((v) => (v && v.length > 0 ? v.replace(",", ".") : null))
+	.refine(
+		(v) =>
+			v === null ||
+			(!Number.isNaN(Number.parseFloat(v)) && Number.parseFloat(v) > 0),
+		"Informe um valor positivo.",
+	);
 
 // ─── Programs ─────────────────────────────────────────────────────────────────
 
@@ -112,6 +131,54 @@ export async function deleteMilhasProgramAction(
 
 		revalidateForEntity("milhas");
 		return { success: true, message: "Programa removido com sucesso." };
+	} catch (error) {
+		return handleActionError(error);
+	}
+}
+
+const updateProgramReferenceValueSchema = z.object({
+	id: uuidSchema("Programa"),
+	referenceValuePer1000Brl: brlAmountSchema,
+});
+
+type ProgramReferenceValueInput = z.input<
+	typeof updateProgramReferenceValueSchema
+>;
+
+/**
+ * Sets (or clears) the market reference value per 1 000 miles for a program.
+ * Pass an empty string or omit the field to clear the value.
+ */
+export async function updateMilhasProgramReferenceValueAction(
+	input: ProgramReferenceValueInput,
+): Promise<ActionResult> {
+	try {
+		const user = await getUser();
+		const data = updateProgramReferenceValueSchema.parse(input);
+
+		const [updated] = await db
+			.update(milhasPrograms)
+			.set({
+				referenceValuePer1000Brl: data.referenceValuePer1000Brl,
+				updatedAt: new Date(),
+			})
+			.where(
+				and(
+					eq(milhasPrograms.id, data.id),
+					eq(milhasPrograms.userId, user.id),
+				),
+			)
+			.returning({ id: milhasPrograms.id });
+
+		if (!updated) {
+			return { success: false, error: "Programa não encontrado." };
+		}
+
+		revalidateForEntity("milhas");
+		return {
+			success: true,
+			message: "Valor de referência atualizado com sucesso.",
+		};
 	} catch (error) {
 		return handleActionError(error);
 	}
@@ -243,35 +310,53 @@ export async function deleteMilhasAccountAction(
 
 // ─── Transactions ─────────────────────────────────────────────────────────────
 
-const createTransactionSchema = z.object({
-	accountId: uuidSchema("Conta"),
-	type: z.enum(MILHAS_TRANSACTION_TYPES, {
-		message: "Tipo de transação inválido.",
-	}),
-	amount: z
-		.number({ message: "Informe a quantidade de milhas." })
-		.int("A quantidade deve ser um número inteiro.")
-		.positive("A quantidade deve ser maior que zero."),
-	occurredAt: z
-		.string({ message: "Informe a data." })
-		.date("Data inválida."),
-	expiresAt: z
-		.string()
-		.date("Data de expiração inválida.")
-		.nullable()
-		.optional(),
-	description: z
-		.string()
-		.trim()
-		.max(255, "A descrição deve ter no máximo 255 caracteres.")
-		.nullable()
-		.optional()
-		.transform((v) => (v && v.length > 0 ? v : null)),
-});
+const createTransactionSchema = z
+	.object({
+		accountId: uuidSchema("Conta"),
+		type: z.enum(MILHAS_TRANSACTION_TYPES, {
+			message: "Tipo de transação inválido.",
+		}),
+		amount: z
+			.number({ message: "Informe a quantidade de milhas." })
+			.int("A quantidade deve ser um número inteiro.")
+			.positive("A quantidade deve ser maior que zero."),
+		occurredAt: z
+			.string({ message: "Informe a data." })
+			.date("Data inválida."),
+		expiresAt: z
+			.string()
+			.date("Data de expiração inválida.")
+			.nullable()
+			.optional(),
+		description: z
+			.string()
+			.trim()
+			.max(255, "A descrição deve ter no máximo 255 caracteres.")
+			.nullable()
+			.optional()
+			.transform((v) => (v && v.length > 0 ? v : null)),
+		/** BRL paid to acquire these miles (EARN / positive ADJUST only). */
+		costBrl: brlAmountSchema,
+		/** Cash-equivalent value of the redemption in BRL (REDEEM only). */
+		cashEquivalentBrl: brlAmountSchema,
+	})
+	.transform((data) => ({
+		...data,
+		// Enforce type-based restrictions server-side regardless of what the
+		// client sends — costBrl is only meaningful for credit transactions,
+		// cashEquivalentBrl only for redemptions.
+		costBrl:
+			data.type === "EARN" || data.type === "ADJUST"
+				? (data.costBrl ?? null)
+				: null,
+		cashEquivalentBrl:
+			data.type === "REDEEM" ? (data.cashEquivalentBrl ?? null) : null,
+	}));
 
 const deleteTransactionSchema = z.object({ id: uuidSchema("Transação") });
 
-type TransactionCreateInput = z.infer<typeof createTransactionSchema>;
+// z.input gives the pre-transform shape (what the client passes in)
+type TransactionCreateInput = z.input<typeof createTransactionSchema>;
 type TransactionDeleteInput = z.infer<typeof deleteTransactionSchema>;
 
 export async function createMilhasTransactionAction(
@@ -302,6 +387,8 @@ export async function createMilhasTransactionAction(
 			occurredAt: new Date(data.occurredAt),
 			expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
 			description: data.description ?? null,
+			costBrl: data.costBrl,
+			cashEquivalentBrl: data.cashEquivalentBrl,
 		});
 
 		revalidateForEntity("milhas");
