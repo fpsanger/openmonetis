@@ -3,9 +3,12 @@
 import {
 	RiAddLine,
 	RiArrowRightSLine,
+	RiAwardLine,
 	RiBarChart2Line,
 	RiCoinLine,
+	RiExchangeDollarLine,
 	RiMoneyDollarCircleLine,
+	RiPercentLine,
 	RiTimeLine,
 } from "@remixicon/react";
 import Link from "next/link";
@@ -32,6 +35,7 @@ interface MilhasPageProps {
 	accounts: MilhasAccountWithMetrics[];
 	redemptions: MilhasRedemptionMetricWithAccount[];
 	expirationSummary: MilhasExpirationSummary;
+	bestRedemption: MilhasRedemptionMetricWithAccount | null;
 }
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -53,6 +57,15 @@ function formatRoi(roiPercent: number | null): string {
 	if (roiPercent === null) return "—";
 	const sign = roiPercent >= 0 ? "+" : "";
 	return `${sign}${roiPercent.toFixed(1)}%`;
+}
+
+// ─── ROI color helper ─────────────────────────────────────────────────────────
+
+function roiColorClass(roiPercent: number | null): string {
+	if (roiPercent === null) return "text-muted-foreground";
+	if (roiPercent > 100) return "text-emerald-600";
+	if (roiPercent >= 0) return "";
+	return "text-destructive";
 }
 
 // ─── Summary cards ────────────────────────────────────────────────────────────
@@ -84,13 +97,20 @@ const SUMMARY_CARDS = [
 		accent: false,
 	},
 	{
-		key: "expiring90" as const,
-		label: "Expiram em 90d",
-		icon: RiTimeLine,
-		format: (v: number | null) =>
-			v !== null ? v.toLocaleString("pt-BR") : "—",
-		unit: "milhas",
-		accent: true,
+		key: "avgRedemptionValuePer1000" as const,
+		label: "Valor médio resgates/1k",
+		icon: RiExchangeDollarLine,
+		format: formatBrl,
+		unit: "por 1.000 milhas resgatadas",
+		accent: false,
+	},
+	{
+		key: "avgRoiPercent" as const,
+		label: "ROI médio",
+		icon: RiPercentLine,
+		format: formatRoi,
+		unit: "nos resgates com valor",
+		accent: false,
 	},
 ] as const;
 
@@ -101,11 +121,20 @@ export function MilhasPage({
 	accounts,
 	redemptions,
 	expirationSummary,
+	bestRedemption,
 }: MilhasPageProps) {
 	const { totals, byAccount } = expirationSummary;
 	const hasExpiring = totals.expiring90 > 0;
 	const hasRedemptions = redemptions.length > 0;
 	const hasRefValues = accounts.some((a) => a.referenceValuePer1000Brl !== null);
+
+	// Most critical expiration window for the summary card
+	const criticalExpiry =
+		totals.expiring30 > 0
+			? { value: totals.expiring30, label: "Expiram em 30d" }
+			: totals.expiring60 > 0
+				? { value: totals.expiring60, label: "Expiram em 60d" }
+				: { value: totals.expiring90, label: "Expiram em 90d" };
 
 	return (
 		<div className="flex flex-col gap-6 w-full">
@@ -121,10 +150,9 @@ export function MilhasPage({
 			</div>
 
 			{/* ── Summary cards ─────────────────────────────────────────────── */}
-			<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-				{SUMMARY_CARDS.map(({ key, label, icon: Icon, format, unit, accent }) => {
+			<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				{SUMMARY_CARDS.map(({ key, label, icon: Icon, format, unit }) => {
 					const value = summary[key];
-					const isAmber = accent && typeof value === "number" && value > 0;
 					return (
 						<Card key={key}>
 							<CardContent className="px-4 py-4">
@@ -133,9 +161,7 @@ export function MilhasPage({
 										<p className="text-xs font-medium text-muted-foreground">
 											{label}
 										</p>
-										<p
-											className={`text-2xl font-semibold tabular-nums truncate ${isAmber ? "text-amber-600" : ""}`}
-										>
+										<p className="text-2xl font-semibold tabular-nums truncate">
 											{format(value as number | null)}
 										</p>
 										<p className="text-xs text-muted-foreground">{unit}</p>
@@ -146,7 +172,55 @@ export function MilhasPage({
 						</Card>
 					);
 				})}
+				{/* Expiration card — label and value reflect the most critical window */}
+				<Card>
+					<CardContent className="px-4 py-4">
+						<div className="flex items-start justify-between gap-3">
+							<div className="space-y-1 min-w-0">
+								<p className="text-xs font-medium text-muted-foreground">
+									{criticalExpiry.label}
+								</p>
+								<p
+									className={`text-2xl font-semibold tabular-nums truncate ${criticalExpiry.value > 0 ? "text-amber-600" : ""}`}
+								>
+									{criticalExpiry.value.toLocaleString("pt-BR")}
+								</p>
+								<p className="text-xs text-muted-foreground">milhas</p>
+							</div>
+							<RiTimeLine className="size-5 text-muted-foreground shrink-0 mt-0.5" />
+						</div>
+					</CardContent>
+				</Card>
 			</div>
+
+			{/* ── Best redemption insight ────────────────────────────────────── */}
+			{bestRedemption && (
+				<Card>
+					<CardContent className="px-4 py-4">
+						<div className="flex items-center gap-3">
+							<RiAwardLine className="size-5 text-amber-500 shrink-0" />
+							<div className="flex flex-1 items-center justify-between gap-4 min-w-0">
+								<div className="min-w-0">
+									<p className="text-xs font-medium text-muted-foreground">Melhor resgate</p>
+									<p className="font-semibold truncate">{bestRedemption.programName}</p>
+									<p className="text-xs text-muted-foreground truncate">{bestRedemption.accountName}</p>
+								</div>
+								<div className="text-right shrink-0">
+									<p className="font-semibold tabular-nums">{formatBrl(bestRedemption.valuePer1000)} /1k</p>
+									<p className="text-xs text-muted-foreground tabular-nums">
+										{bestRedemption.amount.toLocaleString("pt-BR")} milhas
+									</p>
+									{bestRedemption.roiPercent !== null && (
+										<p className={`text-xs font-medium tabular-nums ${roiColorClass(bestRedemption.roiPercent)}`}>
+											ROI {formatRoi(bestRedemption.roiPercent)}
+										</p>
+									)}
+								</div>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+			)}
 
 			{/* ── Expiration summary ─────────────────────────────────────────── */}
 			{hasExpiring && (
@@ -343,13 +417,7 @@ export function MilhasPage({
 											{formatBrl(r.valuePer1000)}
 										</TableCell>
 										<TableCell
-											className={`text-right tabular-nums font-medium ${
-												r.roiPercent === null
-													? "text-muted-foreground"
-													: r.roiPercent >= 0
-														? "text-emerald-600"
-														: "text-destructive"
-											}`}
+											className={`text-right tabular-nums font-medium ${roiColorClass(r.roiPercent)}`}
 										>
 											{formatRoi(r.roiPercent)}
 										</TableCell>

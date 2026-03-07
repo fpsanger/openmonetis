@@ -4,7 +4,7 @@ import { fetchMilhasDashboardData } from "./data";
 
 export default async function Page() {
 	const userId = await getUserId();
-	const { summary, accounts, redemptions, expirationSummary } =
+	const { summary, accounts, redemptions, expirationSummary, bestRedemption } =
 		await fetchMilhasDashboardData(userId);
 	return (
 		<main className="flex flex-col items-start gap-6">
@@ -13,6 +13,7 @@ export default async function Page() {
 				accounts={accounts}
 				redemptions={redemptions}
 				expirationSummary={expirationSummary}
+				bestRedemption={bestRedemption}
 			/>
 		</main>
 	);

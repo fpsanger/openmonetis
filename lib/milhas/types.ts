@@ -154,7 +154,13 @@ export type MilhasDashboardSummary = {
 	avgCostPer1000: number | null;
 	/** Null when no accounts have a reference value configured. */
 	estimatedValueBrl: number | null;
+	expiring30: number;
+	expiring60: number;
 	expiring90: number;
+	/** Average value extracted per 1,000 miles across all REDEEM transactions with cashEquivalentBrl. */
+	avgRedemptionValuePer1000: number | null;
+	/** Average ROI of REDEEM transactions vs global avg acquisition cost. */
+	avgRoiPercent: number | null;
 };
 
 /** MilhasRedemptionMetric extended with account/program context. */

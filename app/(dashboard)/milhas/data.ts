@@ -295,9 +295,10 @@ export async function fetchMilhasDashboardData(userId: string): Promise<{
 	accounts: MilhasAccountWithMetrics[];
 	redemptions: MilhasRedemptionMetricWithAccount[];
 	expirationSummary: MilhasExpirationSummary;
+	bestRedemption: MilhasRedemptionMetricWithAccount | null;
 }> {
 	// Run all queries in parallel
-	const [accounts, costBasisByAccount, expiring90ByAccount, expirationSummary, rawRedemptions] =
+	const [accounts, costBasisByAccount, expiring90ByAccount, expirationSummary, rawRedemptions, redemptionAggRow, bestRedemptionRows] =
 		await Promise.all([
 			fetchMilhasAccountsWithBalance(userId),
 			fetchCostBasisAllAccounts(userId),
@@ -328,6 +329,49 @@ export async function fetchMilhasDashboardData(userId: string): Promise<{
 				)
 				.orderBy(desc(milhasTransactions.occurredAt))
 				.limit(10),
+			// Average value per 1,000 miles across all qualifying REDEEM transactions
+			db
+				.select({
+					avgValuePer1000: sql<string | null>`
+						AVG(${milhasTransactions.cashEquivalentBrl}::numeric / ${milhasTransactions.amount} * 1000)
+					`,
+				})
+				.from(milhasTransactions)
+				.where(
+					and(
+						eq(milhasTransactions.userId, userId),
+						eq(milhasTransactions.type, "REDEEM"),
+						isNotNull(milhasTransactions.cashEquivalentBrl),
+						gt(milhasTransactions.amount, 0),
+					),
+				),
+			// Best single redemption (highest value per 1,000 miles ever)
+			db
+				.select({
+					id: milhasTransactions.id,
+					accountId: milhasTransactions.accountId,
+					accountName: milhasAccounts.name,
+					programName: milhasPrograms.name,
+					occurredAt: milhasTransactions.occurredAt,
+					amount: milhasTransactions.amount,
+					cashEquivalentBrl: sql<number>`
+						${milhasTransactions.cashEquivalentBrl}::numeric
+					`.mapWith(Number),
+					description: milhasTransactions.description,
+				})
+				.from(milhasTransactions)
+				.innerJoin(milhasAccounts, eq(milhasTransactions.accountId, milhasAccounts.id))
+				.innerJoin(milhasPrograms, eq(milhasAccounts.programId, milhasPrograms.id))
+				.where(
+					and(
+						eq(milhasTransactions.userId, userId),
+						eq(milhasTransactions.type, "REDEEM"),
+						isNotNull(milhasTransactions.cashEquivalentBrl),
+						gt(milhasTransactions.amount, 0),
+					),
+				)
+				.orderBy(desc(sql`${milhasTransactions.cashEquivalentBrl}::numeric / ${milhasTransactions.amount}`))
+				.limit(1),
 		]);
 
 	// Compute global cost basis
@@ -335,6 +379,19 @@ export async function fetchMilhasDashboardData(userId: string): Promise<{
 	const globalCreditedMiles = [...costBasisByAccount.values()].reduce((s, c) => s + c.totalCreditedMiles, 0);
 	const globalAvgCostPer1000 =
 		globalCreditedMiles > 0 ? (globalCostBrl / globalCreditedMiles) * 1000 : null;
+
+	// Avg redemption value per 1,000 miles
+	const avgValueRaw = redemptionAggRow[0]?.avgValuePer1000;
+	const avgRedemptionValuePer1000 =
+		avgValueRaw !== null && avgValueRaw !== undefined ? Number(avgValueRaw) : null;
+
+	// Avg ROI derived from avg redemption value vs global cost basis
+	const avgRoiPercent =
+		avgRedemptionValuePer1000 !== null &&
+		globalAvgCostPer1000 !== null &&
+		globalAvgCostPer1000 > 0
+			? ((avgRedemptionValuePer1000 / globalAvgCostPer1000) - 1) * 100
+			: null;
 
 	// Per-account metrics
 	const accountsWithMetrics: MilhasAccountWithMetrics[] = accounts.map((a) => {
@@ -390,16 +447,51 @@ export async function fetchMilhasDashboardData(userId: string): Promise<{
 		};
 	});
 
+	// Best redemption (highest value per 1,000 miles ever)
+	type RawRedemptionRow = {
+		id: string;
+		accountId: string;
+		accountName: string;
+		programName: string;
+		occurredAt: Date;
+		amount: number;
+		cashEquivalentBrl: number;
+		description: string | null;
+	};
+	const bestRaw = (bestRedemptionRows as RawRedemptionRow[])[0] ?? null;
+	const bestRedemption: MilhasRedemptionMetricWithAccount | null = bestRaw
+		? {
+				id: bestRaw.id,
+				accountId: bestRaw.accountId,
+				accountName: bestRaw.accountName,
+				programName: bestRaw.programName,
+				occurredAt: bestRaw.occurredAt,
+				amount: bestRaw.amount,
+				cashEquivalentBrl: bestRaw.cashEquivalentBrl,
+				valuePer1000: (bestRaw.cashEquivalentBrl / bestRaw.amount) * 1000,
+				roiPercent:
+					globalAvgCostPer1000 !== null && globalAvgCostPer1000 > 0
+						? (((bestRaw.cashEquivalentBrl / bestRaw.amount) * 1000) / globalAvgCostPer1000 - 1) * 100
+						: null,
+				description: bestRaw.description,
+		  }
+		: null;
+
 	return {
 		summary: {
 			totalBalance,
 			avgCostPer1000: globalAvgCostPer1000,
 			estimatedValueBrl: totalEstimated > 0 ? totalEstimated : null,
+			expiring30: expirationSummary.totals.expiring30,
+			expiring60: expirationSummary.totals.expiring60,
 			expiring90: expirationSummary.totals.expiring90,
+			avgRedemptionValuePer1000,
+			avgRoiPercent,
 		},
 		accounts: accountsWithMetrics,
 		redemptions,
 		expirationSummary,
+		bestRedemption,
 	};
 }
 
