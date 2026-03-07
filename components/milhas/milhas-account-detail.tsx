@@ -82,6 +82,9 @@ export function MilhasAccountDetail({
 }: MilhasAccountDetailProps) {
 	const router = useRouter();
 	const [isDeletePending, startDeleteTransition] = useTransition();
+	const [editingTx, setEditingTx] = useState<MilhasTransactionData | null>(
+		null,
+	);
 
 	// ── Reference-value inline edit ──────────────────────────────────────────
 	const [editingRef, setEditingRef] = useState(false);
@@ -359,7 +362,7 @@ export function MilhasAccountDetail({
 									<TableHead className="text-right">R$</TableHead>
 									<TableHead>Vence em</TableHead>
 									<TableHead>Descrição</TableHead>
-									<TableHead className="w-10" />
+									<TableHead className="w-20" />
 								</TableRow>
 							</TableHeader>
 							<TableBody>
@@ -410,15 +413,25 @@ export function MilhasAccountDetail({
 												{tx.description ?? "—"}
 											</TableCell>
 											<TableCell>
-												<Button
-													variant="ghost"
-													size="icon"
-													className="size-7 text-muted-foreground hover:text-destructive"
-													disabled={isDeletePending}
-													onClick={() => handleDelete(tx.id)}
-												>
-													<RiDeleteBin5Line className="size-4" />
-												</Button>
+												<div className="flex items-center gap-0.5">
+													<Button
+														variant="ghost"
+														size="icon"
+														className="size-7 text-muted-foreground hover:text-foreground"
+														onClick={() => setEditingTx(tx)}
+													>
+														<RiEdit2Line className="size-4" />
+													</Button>
+													<Button
+														variant="ghost"
+														size="icon"
+														className="size-7 text-muted-foreground hover:text-destructive"
+														disabled={isDeletePending}
+														onClick={() => handleDelete(tx.id)}
+													>
+														<RiDeleteBin5Line className="size-4" />
+													</Button>
+												</div>
 											</TableCell>
 										</TableRow>
 									);
@@ -428,6 +441,16 @@ export function MilhasAccountDetail({
 					)}
 				</CardContent>
 			</Card>
+
+			{/* Edit transaction dialog — controlled, opened from row pencil button */}
+			<MilhasTransactionDialog
+				accountId={account.id}
+				transaction={editingTx ?? undefined}
+				open={editingTx !== null}
+				onOpenChange={(v) => {
+					if (!v) setEditingTx(null);
+				}}
+			/>
 		</div>
 	);
 }

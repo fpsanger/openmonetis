@@ -353,10 +353,49 @@ const createTransactionSchema = z
 			data.type === "REDEEM" ? (data.cashEquivalentBrl ?? null) : null,
 	}));
 
+const updateTransactionSchema = z
+	.object({
+		id: uuidSchema("Transação"),
+		type: z.enum(MILHAS_TRANSACTION_TYPES, {
+			message: "Tipo de transação inválido.",
+		}),
+		amount: z
+			.number({ message: "Informe a quantidade de milhas." })
+			.int("A quantidade deve ser um número inteiro.")
+			.positive("A quantidade deve ser maior que zero."),
+		occurredAt: z
+			.string({ message: "Informe a data." })
+			.date("Data inválida."),
+		expiresAt: z
+			.string()
+			.date("Data de expiração inválida.")
+			.nullable()
+			.optional(),
+		description: z
+			.string()
+			.trim()
+			.max(255, "A descrição deve ter no máximo 255 caracteres.")
+			.nullable()
+			.optional()
+			.transform((v) => (v && v.length > 0 ? v : null)),
+		costBrl: brlAmountSchema,
+		cashEquivalentBrl: brlAmountSchema,
+	})
+	.transform((data) => ({
+		...data,
+		costBrl:
+			data.type === "EARN" || data.type === "ADJUST"
+				? (data.costBrl ?? null)
+				: null,
+		cashEquivalentBrl:
+			data.type === "REDEEM" ? (data.cashEquivalentBrl ?? null) : null,
+	}));
+
 const deleteTransactionSchema = z.object({ id: uuidSchema("Transação") });
 
 // z.input gives the pre-transform shape (what the client passes in)
 type TransactionCreateInput = z.input<typeof createTransactionSchema>;
+type TransactionUpdateInput = z.input<typeof updateTransactionSchema>;
 type TransactionDeleteInput = z.infer<typeof deleteTransactionSchema>;
 
 export async function createMilhasTransactionAction(
@@ -393,6 +432,43 @@ export async function createMilhasTransactionAction(
 
 		revalidateForEntity("milhas");
 		return { success: true, message: "Transação registrada com sucesso." };
+	} catch (error) {
+		return handleActionError(error);
+	}
+}
+
+export async function updateMilhasTransactionAction(
+	input: TransactionUpdateInput,
+): Promise<ActionResult> {
+	try {
+		const user = await getUser();
+		const data = updateTransactionSchema.parse(input);
+
+		const [updated] = await db
+			.update(milhasTransactions)
+			.set({
+				type: data.type,
+				amount: data.amount,
+				occurredAt: new Date(data.occurredAt),
+				expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
+				description: data.description ?? null,
+				costBrl: data.costBrl,
+				cashEquivalentBrl: data.cashEquivalentBrl,
+			})
+			.where(
+				and(
+					eq(milhasTransactions.id, data.id),
+					eq(milhasTransactions.userId, user.id),
+				),
+			)
+			.returning({ id: milhasTransactions.id });
+
+		if (!updated) {
+			return { success: false, error: "Transação não encontrada." };
+		}
+
+		revalidateForEntity("milhas");
+		return { success: true, message: "Transação atualizada com sucesso." };
 	} catch (error) {
 		return handleActionError(error);
 	}
