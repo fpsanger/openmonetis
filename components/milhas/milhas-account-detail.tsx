@@ -38,6 +38,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { MilhasTransactionDialog } from "./milhas-transaction-dialog";
 import { MilhasTransactionFilters } from "./milhas-transaction-filters";
@@ -341,7 +346,17 @@ export function MilhasAccountDetail({
 									<TableHead>Tipo</TableHead>
 									<TableHead className="text-right">Milhas</TableHead>
 									<TableHead className="text-right">R$</TableHead>
-									<TableHead className="text-right">R$/1k</TableHead>
+									<TableHead className="text-right">
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<span className="cursor-help underline decoration-dotted">R$/1k</span>
+										</TooltipTrigger>
+										<TooltipContent>
+											<p>EARN: custo por 1.000 milhas adquiridas</p>
+											<p>REDEEM: valor extraído por 1.000 milhas resgatadas</p>
+										</TooltipContent>
+									</Tooltip>
+								</TableHead>
 									<TableHead className="text-right">ROI</TableHead>
 									<TableHead>Vence em</TableHead>
 									<TableHead>Descrição</TableHead>
@@ -360,20 +375,21 @@ export function MilhasAccountDetail({
 												? formatBrl(Number.parseFloat(tx.cashEquivalentBrl))
 												: "—";
 
-									// R$/1k and ROI — REDEEM with cashEquivalentBrl only
-									const cashEq =
-										tx.type === "REDEEM" && tx.cashEquivalentBrl !== null
-											? Number.parseFloat(tx.cashEquivalentBrl)
-											: null;
-									const valuePer1000 =
-										cashEq !== null && tx.amount > 0
-											? (cashEq / tx.amount) * 1000
-											: null;
+									// R$/1k — contextual by transaction type
+									let ratePer1000: number | null = null;
+									if (tx.type === "EARN" && tx.costBrl !== null && tx.amount > 0) {
+										ratePer1000 = (Number.parseFloat(tx.costBrl) / tx.amount) * 1000;
+									} else if (tx.type === "REDEEM" && tx.cashEquivalentBrl !== null && tx.amount > 0) {
+										ratePer1000 = (Number.parseFloat(tx.cashEquivalentBrl) / tx.amount) * 1000;
+									}
+
+									// ROI — REDEEM only: value extracted vs average acquisition cost
 									const roiPercent =
-										valuePer1000 !== null &&
+										tx.type === "REDEEM" &&
+										ratePer1000 !== null &&
 										costBasis.avgCostPer1000 !== null &&
 										costBasis.avgCostPer1000 > 0
-											? ((valuePer1000 / costBasis.avgCostPer1000) - 1) * 100
+											? ((ratePer1000 / costBasis.avgCostPer1000) - 1) * 100
 											: null;
 
 									// Expiration badge
@@ -437,7 +453,7 @@ export function MilhasAccountDetail({
 												{brlDisplay}
 											</TableCell>
 											<TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-												{valuePer1000 !== null ? formatBrl(valuePer1000) : "—"}
+												{ratePer1000 !== null ? formatBrl(ratePer1000) : "—"}
 											</TableCell>
 											<TableCell
 												className={`text-right text-sm tabular-nums font-medium ${
