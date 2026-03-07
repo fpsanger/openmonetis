@@ -750,6 +750,68 @@ export const milhasTransactions = pgTable(
 	}),
 );
 
+export const milhasLots = pgTable(
+	"miles_lots",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => milhasAccounts.id, { onDelete: "cascade" }),
+		/** The EARN/ADJUST transaction that created this lot. */
+		transactionId: uuid("transaction_id")
+			.notNull()
+			.references(() => milhasTransactions.id, { onDelete: "cascade" }),
+		originalAmount: integer("original_amount").notNull(),
+		remainingAmount: integer("remaining_amount").notNull(),
+		occurredAt: date("occurred_at", { mode: "date" }).notNull(),
+		expiresAt: date("expires_at", { mode: "date" }),
+		/** BRL paid to acquire this lot. Null means free miles. */
+		costBrl: numeric("cost_brl", { precision: 12, scale: 2 }),
+		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		// Primary FIFO query index: account ordered by date
+		accountIdOccurredAtIdx: index("miles_lots_account_id_occurred_at_idx").on(
+			table.accountId,
+			table.occurredAt,
+		),
+		transactionIdIdx: index("miles_lots_transaction_id_idx").on(table.transactionId),
+		userIdIdx: index("miles_lots_user_id_idx").on(table.userId),
+	}),
+);
+
+export const milhasLotAllocations = pgTable(
+	"miles_lot_allocations",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		lotId: uuid("lot_id")
+			.notNull()
+			.references(() => milhasLots.id, { onDelete: "cascade" }),
+		/** The REDEEM/TRANSFER/EXPIRE transaction that consumed from this lot. */
+		transactionId: uuid("transaction_id")
+			.notNull()
+			.references(() => milhasTransactions.id, { onDelete: "cascade" }),
+		consumedAmount: integer("consumed_amount").notNull(),
+		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => ({
+		lotIdIdx: index("miles_lot_allocations_lot_id_idx").on(table.lotId),
+		transactionIdIdx: index("miles_lot_allocations_transaction_id_idx").on(
+			table.transactionId,
+		),
+	}),
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const userRelations = relations(user, ({ many, one }) => ({
@@ -769,6 +831,8 @@ export const userRelations = relations(user, ({ many, one }) => ({
 	milhasPrograms: many(milhasPrograms),
 	milhasAccounts: many(milhasAccounts),
 	milhasTransactions: many(milhasTransactions),
+	milhasLots: many(milhasLots),
+	milhasLotAllocations: many(milhasLotAllocations),
 }));
 
 export const accountRelations = relations(account, ({ one }) => ({
@@ -974,7 +1038,7 @@ export const milhasAccountsRelations = relations(
 
 export const milhasTransactionsRelations = relations(
 	milhasTransactions,
-	({ one }) => ({
+	({ one, many }) => ({
 		user: one(user, {
 			fields: [milhasTransactions.userId],
 			references: [user.id],
@@ -982,6 +1046,44 @@ export const milhasTransactionsRelations = relations(
 		account: one(milhasAccounts, {
 			fields: [milhasTransactions.accountId],
 			references: [milhasAccounts.id],
+		}),
+		// For EARN/ADJUST: the lot created by this transaction
+		lot: many(milhasLots),
+		// For REDEEM/TRANSFER/EXPIRE: the lot slices consumed by this transaction
+		lotAllocations: many(milhasLotAllocations),
+	}),
+);
+
+export const milhasLotsRelations = relations(milhasLots, ({ one, many }) => ({
+	user: one(user, {
+		fields: [milhasLots.userId],
+		references: [user.id],
+	}),
+	account: one(milhasAccounts, {
+		fields: [milhasLots.accountId],
+		references: [milhasAccounts.id],
+	}),
+	transaction: one(milhasTransactions, {
+		fields: [milhasLots.transactionId],
+		references: [milhasTransactions.id],
+	}),
+	allocations: many(milhasLotAllocations),
+}));
+
+export const milhasLotAllocationsRelations = relations(
+	milhasLotAllocations,
+	({ one }) => ({
+		user: one(user, {
+			fields: [milhasLotAllocations.userId],
+			references: [user.id],
+		}),
+		lot: one(milhasLots, {
+			fields: [milhasLotAllocations.lotId],
+			references: [milhasLots.id],
+		}),
+		transaction: one(milhasTransactions, {
+			fields: [milhasLotAllocations.transactionId],
+			references: [milhasTransactions.id],
 		}),
 	}),
 );
@@ -1015,3 +1117,7 @@ export type MilhasAccount = typeof milhasAccounts.$inferSelect;
 export type NewMilhasAccount = typeof milhasAccounts.$inferInsert;
 export type MilhasTransaction = typeof milhasTransactions.$inferSelect;
 export type NewMilhasTransaction = typeof milhasTransactions.$inferInsert;
+export type MilhasLot = typeof milhasLots.$inferSelect;
+export type NewMilhasLot = typeof milhasLots.$inferInsert;
+export type MilhasLotAllocation = typeof milhasLotAllocations.$inferSelect;
+export type NewMilhasLotAllocation = typeof milhasLotAllocations.$inferInsert;

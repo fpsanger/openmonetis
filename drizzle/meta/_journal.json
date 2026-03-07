@@ -141,6 +141,13 @@
       "when": 1772752259040,
       "tag": "0019_simple_madame_web",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1772896774387,
+      "tag": "0020_eager_omega_red",
+      "breakpoints": true
     }
   ]
 }

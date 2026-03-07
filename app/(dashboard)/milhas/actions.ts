@@ -14,7 +14,14 @@ import {
 } from "@/lib/actions/helpers";
 import { getUser } from "@/lib/auth/server";
 import { db } from "@/lib/db";
-import { MILHAS_TRANSACTION_TYPES } from "@/lib/milhas/constants";
+import { CREDIT_TYPES, DEBIT_TYPES, MILHAS_TRANSACTION_TYPES } from "@/lib/milhas/constants";
+import {
+	consumeLotsForTransaction,
+	createLotForTransaction,
+	lotDeletionCheck,
+	releaseLotAllocations,
+} from "@/lib/milhas/fifo";
+import type { MilhasTransactionType } from "@/lib/milhas/types";
 import { uuidSchema } from "@/lib/schemas/common";
 
 // ─── Shared monetary-value schema ─────────────────────────────────────────────
@@ -418,16 +425,45 @@ export async function createMilhasTransactionAction(
 			return { success: false, error: "Conta não encontrada." };
 		}
 
-		await db.insert(milhasTransactions).values({
-			accountId: data.accountId,
-			userId: user.id,
-			type: data.type,
-			amount: data.amount,
-			occurredAt: new Date(data.occurredAt),
-			expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
-			description: data.description ?? null,
-			costBrl: data.costBrl,
-			cashEquivalentBrl: data.cashEquivalentBrl,
+		const occurredAt = new Date(data.occurredAt);
+		const expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+
+		await db.transaction(async (tx) => {
+			const dbTx = tx as unknown as typeof db;
+
+			const [inserted] = await tx
+				.insert(milhasTransactions)
+				.values({
+					accountId: data.accountId,
+					userId: user.id,
+					type: data.type,
+					amount: data.amount,
+					occurredAt,
+					expiresAt,
+					description: data.description ?? null,
+					costBrl: data.costBrl,
+					cashEquivalentBrl: data.cashEquivalentBrl,
+				})
+				.returning({ id: milhasTransactions.id });
+
+			if (CREDIT_TYPES.has(data.type as MilhasTransactionType)) {
+				await createLotForTransaction(dbTx, {
+					userId: user.id,
+					accountId: data.accountId,
+					transactionId: inserted.id,
+					amount: data.amount,
+					occurredAt,
+					expiresAt,
+					costBrl: data.costBrl ?? null,
+				});
+			} else if (DEBIT_TYPES.has(data.type as MilhasTransactionType)) {
+				await consumeLotsForTransaction(dbTx, {
+					userId: user.id,
+					accountId: data.accountId,
+					transactionId: inserted.id,
+					amount: data.amount,
+				});
+			}
 		});
 
 		revalidateForEntity("milhas");
@@ -443,6 +479,15 @@ export async function updateMilhasTransactionAction(
 	try {
 		const user = await getUser();
 		const data = updateTransactionSchema.parse(input);
+
+		// Block editing REDEEM and TRANSFER — FIFO allocations cannot be
+		// automatically reconciled on edit. Delete and re-create instead.
+		if (data.type === "REDEEM" || data.type === "TRANSFER") {
+			return {
+				success: false,
+				error: "Transações do tipo Resgate e Transferência não podem ser editadas. Remova e recrie para corrigir.",
+			};
+		}
 
 		const [updated] = await db
 			.update(milhasTransactions)
@@ -481,19 +526,55 @@ export async function deleteMilhasTransactionAction(
 		const user = await getUser();
 		const data = deleteTransactionSchema.parse(input);
 
-		const [deleted] = await db
-			.delete(milhasTransactions)
-			.where(
-				and(
-					eq(milhasTransactions.id, data.id),
-					eq(milhasTransactions.userId, user.id),
-				),
-			)
-			.returning({ id: milhasTransactions.id });
+		// Fetch the transaction to determine its type for FIFO cleanup
+		const tx = await db.query.milhasTransactions.findFirst({
+			columns: { id: true, type: true },
+			where: and(
+				eq(milhasTransactions.id, data.id),
+				eq(milhasTransactions.userId, user.id),
+			),
+		});
 
-		if (!deleted) {
+		if (!tx) {
 			return { success: false, error: "Transação não encontrada." };
 		}
+
+		const type = tx.type as MilhasTransactionType;
+
+		// For credit transactions: guard against deleting a partially consumed lot
+		if (CREDIT_TYPES.has(type)) {
+			const { canDelete, consumedAmount } = await lotDeletionCheck(db, {
+				userId: user.id,
+				transactionId: data.id,
+			});
+			if (!canDelete) {
+				return {
+					success: false,
+					error: `Não é possível remover esta transação: ${consumedAmount.toLocaleString("pt-BR")} milhas deste lote já foram alocadas em resgates ou transferências.`,
+				};
+			}
+		}
+
+		await db.transaction(async (dbTx) => {
+			const dbClient = dbTx as unknown as typeof db;
+
+			// For debit transactions: release lot allocations before deletion
+			if (DEBIT_TYPES.has(type)) {
+				await releaseLotAllocations(dbClient, {
+					userId: user.id,
+					transactionId: data.id,
+				});
+			}
+
+			await dbTx
+				.delete(milhasTransactions)
+				.where(
+					and(
+						eq(milhasTransactions.id, data.id),
+						eq(milhasTransactions.userId, user.id),
+					),
+				);
+		});
 
 		revalidateForEntity("milhas");
 		return { success: true, message: "Transação removida com sucesso." };

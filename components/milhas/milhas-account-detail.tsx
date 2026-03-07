@@ -7,9 +7,6 @@ import {
 	RiDeleteBin5Line,
 	RiEdit2Line,
 } from "@remixicon/react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
 import {
 	deleteMilhasTransactionAction,
 	updateMilhasProgramReferenceValueAction,
@@ -43,6 +40,9 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { MilhasTransactionDialog } from "./milhas-transaction-dialog";
 import { MilhasTransactionFilters } from "./milhas-transaction-filters";
@@ -479,14 +479,26 @@ export function MilhasAccountDetail({
 											</TableCell>
 											<TableCell>
 												<div className="flex items-center gap-0.5">
-													<Button
-														variant="ghost"
-														size="icon"
-														className="size-7 text-muted-foreground hover:text-foreground"
-														onClick={() => setEditingTx(tx)}
-													>
-														<RiEdit2Line className="size-4" />
-													</Button>
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<span>
+																<Button
+																	variant="ghost"
+																	size="icon"
+																	className="size-7 text-muted-foreground hover:text-foreground"
+																	onClick={() => setEditingTx(tx)}
+																	disabled={tx.type === "REDEEM" || tx.type === "TRANSFER"}
+																>
+																	<RiEdit2Line className="size-4" />
+																</Button>
+															</span>
+														</TooltipTrigger>
+														{(tx.type === "REDEEM" || tx.type === "TRANSFER") && (
+															<TooltipContent>
+																Edição bloqueada: remova e recrie para corrigir.
+															</TooltipContent>
+														)}
+													</Tooltip>
 													<Button
 														variant="ghost"
 														size="icon"
