@@ -16,7 +16,6 @@ import {
 } from "@/app/(dashboard)/milhas/actions";
 import {
 	CREDIT_TYPES,
-	MILHAS_FILTER_OPTIONS,
 	MILHAS_TRANSACTION_TYPE_LABEL,
 	MILHAS_TYPE_BADGE_VARIANT,
 } from "@/lib/milhas/constants";
@@ -25,7 +24,6 @@ import type {
 	MilhasCostBasis,
 	MilhasRedemptionMetric,
 	MilhasTransactionData,
-	MilhasTransactionFilter,
 	MilhasTransactionType,
 } from "@/lib/milhas/types";
 import { Badge } from "@/components/ui/badge";
@@ -42,11 +40,11 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { MilhasTransactionDialog } from "./milhas-transaction-dialog";
+import { MilhasTransactionFilters } from "./milhas-transaction-filters";
 
 interface MilhasAccountDetailProps {
 	account: MilhasAccountData;
 	transactions: MilhasTransactionData[];
-	filter: MilhasTransactionFilter;
 	costBasis: MilhasCostBasis;
 	expiring90: number;
 	redemptionMetrics: MilhasRedemptionMetric[];
@@ -75,7 +73,6 @@ function formatRoi(roiPercent: number | null): string {
 export function MilhasAccountDetail({
 	account,
 	transactions,
-	filter,
 	costBasis,
 	expiring90,
 	redemptionMetrics,
@@ -327,30 +324,14 @@ export function MilhasAccountDetail({
 
 			{/* ── Transactions ──────────────────────────────────────────────── */}
 			<Card>
-				<CardHeader className="flex flex-row items-center justify-between">
+				<CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 					<CardTitle className="text-base">Transações</CardTitle>
-					{/* Filter buttons */}
-					<div className="flex gap-1">
-						{MILHAS_FILTER_OPTIONS.map((opt) => (
-							<Button
-								key={opt.value}
-								variant={filter === opt.value ? "secondary" : "ghost"}
-								size="sm"
-								asChild
-							>
-								<Link
-									href={`/milhas/accounts/${account.id}?filter=${opt.value}`}
-								>
-									{opt.label}
-								</Link>
-							</Button>
-						))}
-					</div>
+					<MilhasTransactionFilters />
 				</CardHeader>
 				<CardContent className="p-0">
 					{transactions.length === 0 ? (
 						<div className="flex flex-col items-center gap-3 py-10 text-center text-sm text-muted-foreground">
-							Nenhuma transação no período.
+							Nenhuma transação encontrada para os filtros selecionados.
 						</div>
 					) : (
 						<Table>
@@ -360,6 +341,8 @@ export function MilhasAccountDetail({
 									<TableHead>Tipo</TableHead>
 									<TableHead className="text-right">Milhas</TableHead>
 									<TableHead className="text-right">R$</TableHead>
+									<TableHead className="text-right">R$/1k</TableHead>
+									<TableHead className="text-right">ROI</TableHead>
 									<TableHead>Vence em</TableHead>
 									<TableHead>Descrição</TableHead>
 									<TableHead className="w-20" />
@@ -369,13 +352,60 @@ export function MilhasAccountDetail({
 								{transactions.map((tx) => {
 									const isCredit = CREDIT_TYPES.has(tx.type);
 
-									// "R$" column: costBrl for credits, cashEquivalentBrl for REDEEM
+									// R$ column: cost for credits, cash-equivalent for REDEEM
 									const brlDisplay =
 										isCredit && tx.costBrl !== null
 											? formatBrl(Number.parseFloat(tx.costBrl))
 											: tx.type === "REDEEM" && tx.cashEquivalentBrl !== null
 												? formatBrl(Number.parseFloat(tx.cashEquivalentBrl))
 												: "—";
+
+									// R$/1k and ROI — REDEEM with cashEquivalentBrl only
+									const cashEq =
+										tx.type === "REDEEM" && tx.cashEquivalentBrl !== null
+											? Number.parseFloat(tx.cashEquivalentBrl)
+											: null;
+									const valuePer1000 =
+										cashEq !== null && tx.amount > 0
+											? (cashEq / tx.amount) * 1000
+											: null;
+									const roiPercent =
+										valuePer1000 !== null &&
+										costBasis.avgCostPer1000 !== null &&
+										costBasis.avgCostPer1000 > 0
+											? ((valuePer1000 / costBasis.avgCostPer1000) - 1) * 100
+											: null;
+
+									// Expiration badge
+									const expBadge = (() => {
+										if (!tx.expiresAt) return null;
+										const days = Math.floor(
+											(new Date(tx.expiresAt).getTime() - Date.now()) /
+												(1000 * 60 * 60 * 24),
+										);
+										if (days < 0)
+											return (
+												<Badge variant="destructive" className="text-xs px-1 py-0">
+													Expirada
+												</Badge>
+											);
+										if (days <= 30)
+											return (
+												<Badge variant="destructive" className="text-xs px-1 py-0">
+													{days}d
+												</Badge>
+											);
+										if (days <= 90)
+											return (
+												<Badge
+													variant="outline"
+													className="text-xs px-1 py-0 text-amber-600 border-amber-500"
+												>
+													{days}d
+												</Badge>
+											);
+										return null;
+									})();
 
 									return (
 										<TableRow key={tx.id}>
@@ -406,10 +436,29 @@ export function MilhasAccountDetail({
 											<TableCell className="text-right text-sm tabular-nums text-muted-foreground">
 												{brlDisplay}
 											</TableCell>
-											<TableCell className="text-sm text-muted-foreground tabular-nums">
-												{formatDate(tx.expiresAt)}
+											<TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+												{valuePer1000 !== null ? formatBrl(valuePer1000) : "—"}
 											</TableCell>
-											<TableCell className="text-sm text-muted-foreground max-w-[180px] truncate">
+											<TableCell
+												className={`text-right text-sm tabular-nums font-medium ${
+													roiPercent === null
+														? "text-muted-foreground"
+														: roiPercent >= 0
+															? "text-emerald-600"
+															: "text-destructive"
+												}`}
+											>
+												{roiPercent !== null ? formatRoi(roiPercent) : "—"}
+											</TableCell>
+											<TableCell className="text-sm tabular-nums">
+												<div className="flex items-center gap-1.5">
+													<span className="text-muted-foreground">
+														{formatDate(tx.expiresAt)}
+													</span>
+													{expBadge}
+												</div>
+											</TableCell>
+											<TableCell className="text-sm text-muted-foreground max-w-[160px] truncate">
 												{tx.description ?? "—"}
 											</TableCell>
 											<TableCell>

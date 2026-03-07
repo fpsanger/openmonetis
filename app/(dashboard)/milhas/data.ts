@@ -1,32 +1,41 @@
-import { and, desc, eq, gt, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import {
 	milhasAccounts,
 	milhasPrograms,
 	milhasTransactions,
-	type MilhasTransaction,
 } from "@/db/schema";
 import { db } from "@/lib/db";
 import { CREDIT_TYPES } from "@/lib/milhas/constants";
 import type {
 	MilhasAccountData,
+	MilhasAccountWithMetrics,
 	MilhasCostBasis,
+	MilhasDashboardSummary,
 	MilhasExpirationSummary,
+	MilhasExpiresFilter,
 	MilhasProgramData,
 	MilhasRedemptionMetric,
+	MilhasRedemptionMetricWithAccount,
 	MilhasTransactionData,
 	MilhasTransactionFilter,
+	MilhasTransactionFilters,
 	MilhasTransactionType,
 } from "@/lib/milhas/types";
 
 // Re-export types so existing page imports keep working
 export type {
 	MilhasAccountData,
+	MilhasAccountWithMetrics,
 	MilhasCostBasis,
+	MilhasDashboardSummary,
 	MilhasExpirationSummary,
+	MilhasExpiresFilter,
 	MilhasProgramData,
 	MilhasRedemptionMetric,
+	MilhasRedemptionMetricWithAccount,
 	MilhasTransactionData,
 	MilhasTransactionFilter,
+	MilhasTransactionFilters,
 	MilhasTransactionType,
 };
 
@@ -140,25 +149,63 @@ export async function fetchMilhasAccountById(
 export async function fetchMilhasTransactions(
 	userId: string,
 	accountId: string,
-	filter: MilhasTransactionFilter = "30",
+	filters: MilhasTransactionFilters = {},
 ): Promise<MilhasTransactionData[]> {
+	const {
+		dateRange = "30",
+		type,
+		expiresWindow,
+		hasCostBrl,
+		hasCashEquivalentBrl,
+		q,
+		sort = "occurredAt",
+		sortDir = "desc",
+	} = filters;
+
 	const cutoff =
-		filter === "all"
+		dateRange === "all"
 			? null
-			: new Date(Date.now() - Number(filter) * 24 * 60 * 60 * 1000);
+			: new Date(Date.now() - Number(dateRange) * 24 * 60 * 60 * 1000);
 
-	const rows = await db.query.milhasTransactions.findMany({
-		where: and(
-			eq(milhasTransactions.accountId, accountId),
-			eq(milhasTransactions.userId, userId),
-			cutoff !== null
-				? gte(milhasTransactions.occurredAt, cutoff)
-				: undefined,
-		),
-		orderBy: [desc(milhasTransactions.occurredAt)],
-	});
+	// biome-ignore lint/suspicious/noExplicitAny: drizzle condition array
+	const conditions: any[] = [
+		eq(milhasTransactions.accountId, accountId),
+		eq(milhasTransactions.userId, userId),
+	];
 
-	return (rows as MilhasTransaction[]).map((row): MilhasTransactionData => ({
+	if (cutoff !== null) conditions.push(gte(milhasTransactions.occurredAt, cutoff));
+	if (type) conditions.push(eq(milhasTransactions.type, type));
+	if (hasCostBrl) conditions.push(isNotNull(milhasTransactions.costBrl));
+	if (hasCashEquivalentBrl) conditions.push(isNotNull(milhasTransactions.cashEquivalentBrl));
+	if (q) conditions.push(ilike(milhasTransactions.description, `%${q}%`));
+
+	if (expiresWindow === "expired") {
+		conditions.push(isNotNull(milhasTransactions.expiresAt));
+		conditions.push(sql`${milhasTransactions.expiresAt} < CURRENT_DATE`);
+	} else if (expiresWindow) {
+		const windowDate = new Date();
+		windowDate.setDate(windowDate.getDate() + Number(expiresWindow as Exclude<MilhasExpiresFilter, "expired">));
+		conditions.push(isNotNull(milhasTransactions.expiresAt));
+		conditions.push(sql`${milhasTransactions.expiresAt} > CURRENT_DATE`);
+		conditions.push(lte(milhasTransactions.expiresAt, windowDate));
+	}
+
+	const SORT_COL = {
+		occurredAt: milhasTransactions.occurredAt,
+		amount: milhasTransactions.amount,
+		expiresAt: milhasTransactions.expiresAt,
+		costBrl: milhasTransactions.costBrl,
+		cashEquivalentBrl: milhasTransactions.cashEquivalentBrl,
+	} as const;
+	const orderExpr = sortDir === "asc" ? asc(SORT_COL[sort]) : desc(SORT_COL[sort]);
+
+	const rows = await db
+		.select()
+		.from(milhasTransactions)
+		.where(and(...conditions))
+		.orderBy(orderExpr);
+
+	return rows.map((row): MilhasTransactionData => ({
 		id: row.id,
 		type: row.type as MilhasTransactionType,
 		amount: row.amount,
@@ -173,6 +220,188 @@ export async function fetchMilhasTransactions(
 
 // Keep CREDIT_TYPES exported for any legacy usage (prefer lib/milhas/constants)
 export { CREDIT_TYPES };
+
+// ─── Dashboard data helpers (internal) ───────────────────────────────────────
+
+async function fetchCostBasisAllAccounts(
+	userId: string,
+): Promise<Map<string, MilhasCostBasis>> {
+	const rows = await db
+		.select({
+			accountId: milhasTransactions.accountId,
+			totalCostBrl: sql<number>`
+				COALESCE(SUM(${milhasTransactions.costBrl}::numeric), 0)
+			`.mapWith(Number),
+			totalCreditedMiles: sql<number>`
+				COALESCE(SUM(${milhasTransactions.amount}), 0)
+			`.mapWith(Number),
+		})
+		.from(milhasTransactions)
+		.where(
+			and(
+				eq(milhasTransactions.userId, userId),
+				inArray(milhasTransactions.type, ["EARN", "ADJUST"]),
+				gt(milhasTransactions.amount, 0),
+				isNotNull(milhasTransactions.costBrl),
+			),
+		)
+		.groupBy(milhasTransactions.accountId);
+
+	return new Map(
+		rows.map((row) => [
+			row.accountId,
+			{
+				totalCostBrl: row.totalCostBrl,
+				totalCreditedMiles: row.totalCreditedMiles,
+				avgCostPer1000:
+					row.totalCreditedMiles > 0
+						? (row.totalCostBrl / row.totalCreditedMiles) * 1000
+						: null,
+			},
+		]),
+	);
+}
+
+async function fetchExpiring90AllAccounts(
+	userId: string,
+): Promise<Map<string, number>> {
+	const rows = await db
+		.select({
+			accountId: milhasTransactions.accountId,
+			expiring: sql<number>`
+				COALESCE(SUM(${milhasTransactions.amount}), 0)
+			`.mapWith(Number),
+		})
+		.from(milhasTransactions)
+		.where(
+			and(
+				eq(milhasTransactions.userId, userId),
+				inArray(milhasTransactions.type, ["EARN", "ADJUST"]),
+				gt(milhasTransactions.amount, 0),
+				isNotNull(milhasTransactions.expiresAt),
+				sql`${milhasTransactions.expiresAt} > CURRENT_DATE`,
+				sql`${milhasTransactions.expiresAt} <= CURRENT_DATE + INTERVAL '90 days'`,
+			),
+		)
+		.groupBy(milhasTransactions.accountId);
+
+	return new Map(rows.map((row) => [row.accountId, row.expiring]));
+}
+
+// ─── Dashboard: composed query ────────────────────────────────────────────────
+
+export async function fetchMilhasDashboardData(userId: string): Promise<{
+	summary: MilhasDashboardSummary;
+	accounts: MilhasAccountWithMetrics[];
+	redemptions: MilhasRedemptionMetricWithAccount[];
+	expirationSummary: MilhasExpirationSummary;
+}> {
+	// Run all queries in parallel
+	const [accounts, costBasisByAccount, expiring90ByAccount, expirationSummary, rawRedemptions] =
+		await Promise.all([
+			fetchMilhasAccountsWithBalance(userId),
+			fetchCostBasisAllAccounts(userId),
+			fetchExpiring90AllAccounts(userId),
+			fetchExpirationSummary(userId),
+			db
+				.select({
+					id: milhasTransactions.id,
+					accountId: milhasTransactions.accountId,
+					accountName: milhasAccounts.name,
+					programName: milhasPrograms.name,
+					occurredAt: milhasTransactions.occurredAt,
+					amount: milhasTransactions.amount,
+					cashEquivalentBrl: sql<number>`
+						${milhasTransactions.cashEquivalentBrl}::numeric
+					`.mapWith(Number),
+					description: milhasTransactions.description,
+				})
+				.from(milhasTransactions)
+				.innerJoin(milhasAccounts, eq(milhasTransactions.accountId, milhasAccounts.id))
+				.innerJoin(milhasPrograms, eq(milhasAccounts.programId, milhasPrograms.id))
+				.where(
+					and(
+						eq(milhasTransactions.userId, userId),
+						eq(milhasTransactions.type, "REDEEM"),
+						isNotNull(milhasTransactions.cashEquivalentBrl),
+					),
+				)
+				.orderBy(desc(milhasTransactions.occurredAt))
+				.limit(10),
+		]);
+
+	// Compute global cost basis
+	const globalCostBrl = [...costBasisByAccount.values()].reduce((s, c) => s + c.totalCostBrl, 0);
+	const globalCreditedMiles = [...costBasisByAccount.values()].reduce((s, c) => s + c.totalCreditedMiles, 0);
+	const globalAvgCostPer1000 =
+		globalCreditedMiles > 0 ? (globalCostBrl / globalCreditedMiles) * 1000 : null;
+
+	// Per-account metrics
+	const accountsWithMetrics: MilhasAccountWithMetrics[] = accounts.map((a) => {
+		const cb = costBasisByAccount.get(a.id);
+		const refValue =
+			a.referenceValuePer1000Brl !== null
+				? Number.parseFloat(a.referenceValuePer1000Brl)
+				: null;
+		return {
+			...a,
+			avgCostPer1000: cb?.avgCostPer1000 ?? null,
+			estimatedValueBrl: refValue !== null ? (a.balance / 1000) * refValue : null,
+			expiring90: expiring90ByAccount.get(a.id) ?? 0,
+		};
+	});
+
+	// Global summary
+	const totalBalance = accountsWithMetrics.reduce((s, a) => s + a.balance, 0);
+	const totalEstimated = accountsWithMetrics.reduce(
+		(s, a) => (a.estimatedValueBrl !== null ? s + a.estimatedValueBrl : s),
+		0,
+	);
+
+	// Annotate redemptions with ROI vs global cost basis
+	const redemptions: MilhasRedemptionMetricWithAccount[] = (
+		rawRedemptions as {
+			id: string;
+			accountId: string;
+			accountName: string;
+			programName: string;
+			occurredAt: Date;
+			amount: number;
+			cashEquivalentBrl: number;
+			description: string | null;
+		}[]
+	).map((r) => {
+		const valuePer1000 = r.amount > 0 ? (r.cashEquivalentBrl / r.amount) * 1000 : 0;
+		const roiPercent =
+			globalAvgCostPer1000 !== null && globalAvgCostPer1000 > 0
+				? ((valuePer1000 / globalAvgCostPer1000) - 1) * 100
+				: null;
+		return {
+			id: r.id,
+			accountId: r.accountId,
+			accountName: r.accountName,
+			programName: r.programName,
+			occurredAt: r.occurredAt,
+			amount: r.amount,
+			cashEquivalentBrl: r.cashEquivalentBrl,
+			valuePer1000,
+			roiPercent,
+			description: r.description,
+		};
+	});
+
+	return {
+		summary: {
+			totalBalance,
+			avgCostPer1000: globalAvgCostPer1000,
+			estimatedValueBrl: totalEstimated > 0 ? totalEstimated : null,
+			expiring90: expirationSummary.totals.expiring90,
+		},
+		accounts: accountsWithMetrics,
+		redemptions,
+		expirationSummary,
+	};
+}
 
 // ─── Metric queries ───────────────────────────────────────────────────────────
 

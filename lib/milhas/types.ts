@@ -111,3 +111,53 @@ export type MilhasRedemptionMetric = {
 	roiPercent: number | null;
 	description: string | null;
 };
+
+// ─── Enhanced transaction filters (URL-param driven) ─────────────────────────
+
+export type MilhasTransactionSortField =
+	| "occurredAt"
+	| "amount"
+	| "expiresAt"
+	| "costBrl"
+	| "cashEquivalentBrl";
+
+export type MilhasTransactionSortDir = "asc" | "desc";
+
+export type MilhasExpiresFilter = "30" | "60" | "90" | "expired";
+
+export type MilhasTransactionFilters = {
+	/** Look-back window for occurredAt. Default "30". */
+	dateRange?: MilhasTransactionFilter;
+	type?: MilhasTransactionType;
+	/** Filter by upcoming expiration window or expired. */
+	expiresWindow?: MilhasExpiresFilter;
+	hasCostBrl?: boolean;
+	hasCashEquivalentBrl?: boolean;
+	/** Case-insensitive substring match on description. */
+	q?: string;
+	sort?: MilhasTransactionSortField;
+	sortDir?: MilhasTransactionSortDir;
+};
+
+// ─── Dashboard / portfolio shapes ─────────────────────────────────────────────
+
+export type MilhasAccountWithMetrics = MilhasAccountData & {
+	avgCostPer1000: number | null;
+	estimatedValueBrl: number | null;
+	expiring90: number;
+};
+
+export type MilhasDashboardSummary = {
+	totalBalance: number;
+	avgCostPer1000: number | null;
+	/** Null when no accounts have a reference value configured. */
+	estimatedValueBrl: number | null;
+	expiring90: number;
+};
+
+/** MilhasRedemptionMetric extended with account/program context. */
+export type MilhasRedemptionMetricWithAccount = MilhasRedemptionMetric & {
+	accountId: string;
+	accountName: string;
+	programName: string;
+};
