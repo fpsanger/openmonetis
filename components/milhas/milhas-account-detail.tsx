@@ -49,6 +49,7 @@ import { MilhasTransactionFilters } from "./milhas-transaction-filters";
 
 interface MilhasAccountDetailProps {
 	account: MilhasAccountData;
+	allAccounts: MilhasAccountData[];
 	transactions: MilhasTransactionData[];
 	costBasis: MilhasCostBasis;
 	expiring90: number;
@@ -77,11 +78,13 @@ function formatRoi(roiPercent: number | null): string {
 
 export function MilhasAccountDetail({
 	account,
+	allAccounts,
 	transactions,
 	costBasis,
 	expiring90,
 	redemptionMetrics,
 }: MilhasAccountDetailProps) {
+	const otherAccounts = allAccounts.filter((a) => a.id !== account.id);
 	const router = useRouter();
 	const [isDeletePending, startDeleteTransition] = useTransition();
 	const [editingTx, setEditingTx] = useState<MilhasTransactionData | null>(
@@ -154,7 +157,7 @@ export function MilhasAccountDetail({
 						<h1 className="text-2xl font-semibold">{account.name}</h1>
 					</div>
 				</div>
-				<MilhasTransactionDialog accountId={account.id} />
+				<MilhasTransactionDialog accountId={account.id} otherAccounts={otherAccounts} />
 			</div>
 
 			{/* ── Metrics grid ──────────────────────────────────────────────── */}
@@ -522,6 +525,7 @@ export function MilhasAccountDetail({
 			{/* Edit transaction dialog — controlled, opened from row pencil button */}
 			<MilhasTransactionDialog
 				accountId={account.id}
+				otherAccounts={otherAccounts}
 				transaction={editingTx ?? undefined}
 				open={editingTx !== null}
 				onOpenChange={(v) => {

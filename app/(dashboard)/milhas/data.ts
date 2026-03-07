@@ -66,7 +66,7 @@ export async function fetchMilhasAccountsWithBalance(
 				COALESCE(
 					SUM(
 						CASE
-							WHEN ${milhasTransactions.type} IN ('EARN', 'ADJUST') THEN ${milhasTransactions.amount}
+							WHEN ${milhasTransactions.type} IN ('EARN', 'ADJUST', 'TRANSFER_IN') THEN ${milhasTransactions.amount}
 							ELSE -${milhasTransactions.amount}
 						END
 					),
@@ -111,7 +111,7 @@ export async function fetchMilhasAccountById(
 				COALESCE(
 					SUM(
 						CASE
-							WHEN ${milhasTransactions.type} IN ('EARN', 'ADJUST') THEN ${milhasTransactions.amount}
+							WHEN ${milhasTransactions.type} IN ('EARN', 'ADJUST', 'TRANSFER_IN') THEN ${milhasTransactions.amount}
 							ELSE -${milhasTransactions.amount}
 						END
 					),

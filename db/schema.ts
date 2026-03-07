@@ -717,7 +717,7 @@ export const milhasTransactions = pgTable(
 		accountId: uuid("account_id")
 			.notNull()
 			.references(() => milhasAccounts.id, { onDelete: "cascade" }),
-		type: text("type").notNull(), // EARN | REDEEM | TRANSFER | EXPIRE | ADJUST
+		type: text("type").notNull(), // EARN | REDEEM | TRANSFER | TRANSFER_OUT | TRANSFER_IN | EXPIRE | ADJUST
 		amount: integer("amount").notNull(),
 		occurredAt: date("occurred_at", { mode: "date" }).notNull(),
 		expiresAt: date("expires_at", { mode: "date" }),
@@ -732,6 +732,11 @@ export const milhasTransactions = pgTable(
 		 * Used to compute value-per-1 000 and ROI.
 		 */
 		cashEquivalentBrl: numeric("cash_equivalent_brl", { precision: 12, scale: 2 }),
+		/**
+		 * Links the two legs of an automatic transfer (TRANSFER_OUT ↔ TRANSFER_IN).
+		 * Both records share the same transferId.
+		 */
+		transferId: uuid("transfer_id"),
 		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
 			.notNull()
 			.defaultNow(),

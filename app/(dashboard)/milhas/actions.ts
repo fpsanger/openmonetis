@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -480,9 +481,13 @@ export async function updateMilhasTransactionAction(
 		const user = await getUser();
 		const data = updateTransactionSchema.parse(input);
 
-		// Block editing REDEEM and TRANSFER — FIFO allocations cannot be
-		// automatically reconciled on edit. Delete and re-create instead.
-		if (data.type === "REDEEM" || data.type === "TRANSFER") {
+		// Block editing types with FIFO side-effects — delete and re-create instead.
+		if (
+			data.type === "REDEEM" ||
+			data.type === "TRANSFER" ||
+			data.type === "TRANSFER_OUT" ||
+			data.type === "TRANSFER_IN"
+		) {
 			return {
 				success: false,
 				error: "Transações do tipo Resgate e Transferência não podem ser editadas. Remova e recrie para corrigir.",
@@ -526,22 +531,116 @@ export async function deleteMilhasTransactionAction(
 		const user = await getUser();
 		const data = deleteTransactionSchema.parse(input);
 
-		// Fetch the transaction to determine its type for FIFO cleanup
-		const tx = await db.query.milhasTransactions.findFirst({
-			columns: { id: true, type: true },
+		// Fetch the transaction to determine its type + transferId for FIFO cleanup
+		const existingTx = await db.query.milhasTransactions.findFirst({
+			columns: { id: true, type: true, accountId: true, transferId: true },
 			where: and(
 				eq(milhasTransactions.id, data.id),
 				eq(milhasTransactions.userId, user.id),
 			),
 		});
 
-		if (!tx) {
+		if (!existingTx) {
 			return { success: false, error: "Transação não encontrada." };
 		}
 
-		const type = tx.type as MilhasTransactionType;
+		const type = existingTx.type as MilhasTransactionType;
 
-		// For credit transactions: guard against deleting a partially consumed lot
+		// For TRANSFER_OUT: also delete the paired TRANSFER_IN (if unused)
+		if (type === "TRANSFER_OUT") {
+			if (existingTx.transferId) {
+				const paired = await db.query.milhasTransactions.findFirst({
+					columns: { id: true, accountId: true },
+					where: and(
+						eq(milhasTransactions.transferId, existingTx.transferId),
+						eq(milhasTransactions.userId, user.id),
+						eq(milhasTransactions.type, "TRANSFER_IN"),
+					),
+				});
+				if (paired) {
+					const { canDelete, consumedAmount } = await lotDeletionCheck(db, {
+						userId: user.id,
+						transactionId: paired.id,
+					});
+					if (!canDelete) {
+						return {
+							success: false,
+							error: `Não é possível remover esta transferência: ${consumedAmount.toLocaleString("pt-BR")} milhas já foram utilizadas na conta de destino.`,
+						};
+					}
+					await db.transaction(async (dbTx) => {
+						const dbClient = dbTx as unknown as typeof db;
+						await releaseLotAllocations(dbClient, {
+							userId: user.id,
+							transactionId: data.id,
+						});
+						await dbTx.delete(milhasTransactions).where(
+							and(
+								eq(milhasTransactions.id, paired.id),
+								eq(milhasTransactions.userId, user.id),
+							),
+						);
+						await dbTx.delete(milhasTransactions).where(
+							and(
+								eq(milhasTransactions.id, data.id),
+								eq(milhasTransactions.userId, user.id),
+							),
+						);
+					});
+					revalidateForEntity("milhas");
+					return { success: true, message: "Transferência removida com sucesso." };
+				}
+			}
+		}
+
+		// For TRANSFER_IN: check its lot, then also delete paired TRANSFER_OUT
+		if (type === "TRANSFER_IN") {
+			const { canDelete, consumedAmount } = await lotDeletionCheck(db, {
+				userId: user.id,
+				transactionId: data.id,
+			});
+			if (!canDelete) {
+				return {
+					success: false,
+					error: `Não é possível remover esta transferência: ${consumedAmount.toLocaleString("pt-BR")} milhas já foram utilizadas nesta conta.`,
+				};
+			}
+			if (existingTx.transferId) {
+				const paired = await db.query.milhasTransactions.findFirst({
+					columns: { id: true, accountId: true },
+					where: and(
+						eq(milhasTransactions.transferId, existingTx.transferId),
+						eq(milhasTransactions.userId, user.id),
+						eq(milhasTransactions.type, "TRANSFER_OUT"),
+					),
+				});
+				if (paired) {
+					await db.transaction(async (dbTx) => {
+						const dbClient = dbTx as unknown as typeof db;
+						await releaseLotAllocations(dbClient, {
+							userId: user.id,
+							transactionId: paired.id,
+						});
+						await dbTx.delete(milhasTransactions).where(
+							and(
+								eq(milhasTransactions.id, paired.id),
+								eq(milhasTransactions.userId, user.id),
+							),
+						);
+						await dbTx.delete(milhasTransactions).where(
+							and(
+								eq(milhasTransactions.id, data.id),
+								eq(milhasTransactions.userId, user.id),
+							),
+						);
+					});
+					revalidateForEntity("milhas");
+					return { success: true, message: "Transferência removida com sucesso." };
+				}
+			}
+		}
+
+		// Standard single-transaction deletion (EARN, ADJUST, REDEEM, EXPIRE, TRANSFER legacy)
 		if (CREDIT_TYPES.has(type)) {
 			const { canDelete, consumedAmount } = await lotDeletionCheck(db, {
 				userId: user.id,
@@ -558,7 +657,6 @@ export async function deleteMilhasTransactionAction(
 		await db.transaction(async (dbTx) => {
 			const dbClient = dbTx as unknown as typeof db;
 
-			// For debit transactions: release lot allocations before deletion
 			if (DEBIT_TYPES.has(type)) {
 				await releaseLotAllocations(dbClient, {
 					userId: user.id,
@@ -578,6 +676,138 @@ export async function deleteMilhasTransactionAction(
 
 		revalidateForEntity("milhas");
 		return { success: true, message: "Transação removida com sucesso." };
+	} catch (error) {
+		return handleActionError(error);
+	}
+}
+
+// ─── Transfers ─────────────────────────────────────────────────────────────────
+
+const transferSchema = z.object({
+	sourceAccountId: uuidSchema("Conta de origem"),
+	destinationAccountId: uuidSchema("Conta de destino"),
+	amount: z
+		.number({ message: "Informe a quantidade de milhas." })
+		.int("A quantidade deve ser um número inteiro.")
+		.positive("A quantidade deve ser maior que zero."),
+	bonusPercent: z
+		.number()
+		.min(0, "O bônus não pode ser negativo.")
+		.max(10000, "Bônus inválido.")
+		.default(0),
+	occurredAt: z.string({ message: "Informe a data." }).date("Data inválida."),
+	description: z
+		.string()
+		.trim()
+		.max(255, "A descrição deve ter no máximo 255 caracteres.")
+		.nullable()
+		.optional()
+		.transform((v) => (v && v.length > 0 ? v : null)),
+});
+
+type TransferInput = z.input<typeof transferSchema>;
+
+/**
+ * Creates a paired TRANSFER_OUT (source) + TRANSFER_IN (destination) atomically.
+ * Consumes source miles via FIFO and creates a new lot in the destination account.
+ * Destination miles = amount * (1 + bonusPercent / 100), rounded to nearest integer.
+ */
+export async function transferMilhasAction(
+	input: TransferInput,
+): Promise<ActionResult> {
+	try {
+		const user = await getUser();
+		const data = transferSchema.parse(input);
+
+		if (data.sourceAccountId === data.destinationAccountId) {
+			return {
+				success: false,
+				error: "Conta de origem e destino devem ser diferentes.",
+			};
+		}
+
+		const [sourceAccount, destAccount] = await Promise.all([
+			db.query.milhasAccounts.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(milhasAccounts.id, data.sourceAccountId),
+					eq(milhasAccounts.userId, user.id),
+				),
+			}),
+			db.query.milhasAccounts.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(milhasAccounts.id, data.destinationAccountId),
+					eq(milhasAccounts.userId, user.id),
+				),
+			}),
+		]);
+
+		if (!sourceAccount) {
+			return { success: false, error: "Conta de origem não encontrada." };
+		}
+		if (!destAccount) {
+			return { success: false, error: "Conta de destino não encontrada." };
+		}
+
+		const destinationAmount = Math.round(
+			data.amount * (1 + data.bonusPercent / 100),
+		);
+		const transferId = randomUUID();
+		const occurredAt = new Date(data.occurredAt);
+
+		await db.transaction(async (tx) => {
+			const dbTx = tx as unknown as typeof db;
+
+			const [outTx] = await tx
+				.insert(milhasTransactions)
+				.values({
+					accountId: data.sourceAccountId,
+					userId: user.id,
+					type: "TRANSFER_OUT",
+					amount: data.amount,
+					occurredAt,
+					description: data.description ?? null,
+					transferId,
+				})
+				.returning({ id: milhasTransactions.id });
+
+			await consumeLotsForTransaction(dbTx, {
+				userId: user.id,
+				accountId: data.sourceAccountId,
+				transactionId: outTx.id,
+				amount: data.amount,
+			});
+
+			const [inTx] = await tx
+				.insert(milhasTransactions)
+				.values({
+					accountId: data.destinationAccountId,
+					userId: user.id,
+					type: "TRANSFER_IN",
+					amount: destinationAmount,
+					occurredAt,
+					description: data.description ?? null,
+					transferId,
+				})
+				.returning({ id: milhasTransactions.id });
+
+			await createLotForTransaction(dbTx, {
+				userId: user.id,
+				accountId: data.destinationAccountId,
+				transactionId: inTx.id,
+				amount: destinationAmount,
+				occurredAt,
+				expiresAt: null,
+				costBrl: null,
+			});
+		});
+
+		revalidateForEntity("milhas");
+		return {
+			success: true,
+			message: `Transferência concluída: ${destinationAmount.toLocaleString("pt-BR")} milhas creditadas na conta de destino.`,
+		};
 	} catch (error) {
 		return handleActionError(error);
 	}

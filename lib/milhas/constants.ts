@@ -11,9 +11,24 @@ export const MILHAS_TRANSACTION_TYPES = [
 	"EARN",
 	"REDEEM",
 	"TRANSFER",
+	"TRANSFER_OUT",
+	"TRANSFER_IN",
 	"EXPIRE",
 	"ADJUST",
 ] as const;
+
+/**
+ * Types shown in the "create transaction" dialog selector.
+ * TRANSFER_OUT and TRANSFER_IN are created automatically by transferMilhasAction
+ * and should not appear as manual options.
+ */
+export const SELECTABLE_TRANSACTION_TYPES = [
+	"EARN",
+	"REDEEM",
+	"TRANSFER",
+	"EXPIRE",
+	"ADJUST",
+] as const satisfies readonly MilhasTransactionType[];
 
 // ─── Credit vs debit classification ──────────────────────────────────────────
 
@@ -21,6 +36,7 @@ export const MILHAS_TRANSACTION_TYPES = [
 export const CREDIT_TYPES: ReadonlySet<MilhasTransactionType> = new Set([
 	"EARN",
 	"ADJUST",
+	"TRANSFER_IN",
 ]);
 
 /** Transaction types that decrease the account balance. */
@@ -28,6 +44,7 @@ export const DEBIT_TYPES: ReadonlySet<MilhasTransactionType> = new Set([
 	"REDEEM",
 	"EXPIRE",
 	"TRANSFER",
+	"TRANSFER_OUT",
 ]);
 
 // ─── Display labels ───────────────────────────────────────────────────────────
@@ -39,6 +56,8 @@ export const MILHAS_TRANSACTION_TYPE_LABEL: Record<
 	EARN: "Ganho",
 	REDEEM: "Resgate",
 	TRANSFER: "Transferência",
+	TRANSFER_OUT: "Transferência (saída)",
+	TRANSFER_IN: "Transferência (entrada)",
 	EXPIRE: "Expiração",
 	ADJUST: "Ajuste",
 };
@@ -62,6 +81,8 @@ export const MILHAS_TYPE_BADGE_VARIANT: Record<
 	REDEEM: "destructive",
 	EXPIRE: "destructive",
 	TRANSFER: "secondary",
+	TRANSFER_OUT: "secondary",
+	TRANSFER_IN: "success",
 };
 
 // ─── Filter options (for UI) ──────────────────────────────────────────────────

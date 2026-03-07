@@ -1,0 +1,1 @@
+ALTER TABLE "miles_transactions" ADD COLUMN "transfer_id" uuid;

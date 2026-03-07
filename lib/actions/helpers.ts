@@ -59,7 +59,13 @@ const DASHBOARD_ENTITIES: ReadonlySet<string> = new Set([
 export function revalidateForEntity(
 	entity: keyof typeof revalidateConfig,
 ): void {
-	revalidateConfig[entity].forEach((path) => revalidatePath(path));
+	if (entity === "milhas") {
+		// Invalidate the entire milhas subtree so account detail pages
+		// (/milhas/accounts/[id]) also get fresh data after mutations.
+		revalidatePath("/milhas", "layout");
+	} else {
+		revalidateConfig[entity].forEach((path) => revalidatePath(path));
+	}
 
 	// Invalidate dashboard cache for financial mutations
 	if (DASHBOARD_ENTITIES.has(entity)) {

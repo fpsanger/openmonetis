@@ -5,6 +5,7 @@ import {
 	fetchAccountCostBasis,
 	fetchAccountExpiration90,
 	fetchMilhasAccountById,
+	fetchMilhasAccountsWithBalance,
 	fetchMilhasTransactions,
 	fetchRedemptionMetrics,
 } from "../../data";
@@ -79,9 +80,10 @@ export default async function Page({ params, searchParams }: PageProps) {
 	};
 
 	const userId = await getUserId();
-	const [account, transactions, costBasis, expiring90, redemptionMetrics] =
+	const [account, allAccounts, transactions, costBasis, expiring90, redemptionMetrics] =
 		await Promise.all([
 			fetchMilhasAccountById(userId, id),
+			fetchMilhasAccountsWithBalance(userId),
 			fetchMilhasTransactions(userId, id, filters),
 			fetchAccountCostBasis(userId, id),
 			fetchAccountExpiration90(userId, id),
@@ -96,6 +98,7 @@ export default async function Page({ params, searchParams }: PageProps) {
 		<main className="flex flex-col items-start gap-6">
 			<MilhasAccountDetail
 				account={account}
+				allAccounts={allAccounts}
 				transactions={transactions}
 				costBasis={costBasis}
 				expiring90={expiring90}

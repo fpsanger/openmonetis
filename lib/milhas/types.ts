@@ -9,6 +9,8 @@ export type MilhasTransactionType =
 	| "EARN"
 	| "REDEEM"
 	| "TRANSFER"
+	| "TRANSFER_OUT"
+	| "TRANSFER_IN"
 	| "EXPIRE"
 	| "ADJUST";
 
