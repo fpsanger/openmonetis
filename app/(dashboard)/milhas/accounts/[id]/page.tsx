@@ -8,25 +8,81 @@ import {
 	fetchMilhasTransactions,
 	fetchRedemptionMetrics,
 } from "../../data";
-import type { MilhasTransactionFilter } from "@/lib/milhas/types";
+import type {
+	MilhasExpiresFilter,
+	MilhasTransactionFilters,
+	MilhasTransactionSortDir,
+	MilhasTransactionSortField,
+} from "@/lib/milhas/types";
+
+const VALID_DATE_RANGES = ["30", "90", "all"] as const;
+const VALID_TYPES = ["EARN", "REDEEM", "TRANSFER", "EXPIRE", "ADJUST"] as const;
+const VALID_EXPIRES = ["30", "60", "90", "expired"] as const;
+const VALID_SORTS = [
+	"occurredAt",
+	"amount",
+	"expiresAt",
+	"costBrl",
+	"cashEquivalentBrl",
+] as const;
 
 interface PageProps {
 	params: Promise<{ id: string }>;
-	searchParams: Promise<{ filter?: string }>;
+	searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export default async function Page({ params, searchParams }: PageProps) {
 	const { id } = await params;
-	const { filter: rawFilter } = await searchParams;
+	const sp = await searchParams;
 
-	const filter: MilhasTransactionFilter =
-		rawFilter === "90" || rawFilter === "all" ? rawFilter : "30";
+	const get = (key: string) =>
+		typeof sp[key] === "string" ? (sp[key] as string) : undefined;
+
+	const dateRange = VALID_DATE_RANGES.includes(
+		get("filter") as (typeof VALID_DATE_RANGES)[number],
+	)
+		? (get("filter") as (typeof VALID_DATE_RANGES)[number])
+		: "30";
+
+	const type = VALID_TYPES.includes(
+		get("type") as (typeof VALID_TYPES)[number],
+	)
+		? (get("type") as (typeof VALID_TYPES)[number])
+		: undefined;
+
+	const expiresWindow = VALID_EXPIRES.includes(
+		get("expires") as MilhasExpiresFilter,
+	)
+		? (get("expires") as MilhasExpiresFilter)
+		: undefined;
+
+	const sort = VALID_SORTS.includes(
+		get("sort") as MilhasTransactionSortField,
+	)
+		? (get("sort") as MilhasTransactionSortField)
+		: undefined;
+
+	const sortDir =
+		get("sortDir") === "asc" || get("sortDir") === "desc"
+			? (get("sortDir") as MilhasTransactionSortDir)
+			: undefined;
+
+	const filters: MilhasTransactionFilters = {
+		dateRange,
+		type,
+		expiresWindow,
+		hasCostBrl: get("hasCost") === "1",
+		hasCashEquivalentBrl: get("hasCashEq") === "1",
+		q: get("q") ?? undefined,
+		sort,
+		sortDir,
+	};
 
 	const userId = await getUserId();
 	const [account, transactions, costBasis, expiring90, redemptionMetrics] =
 		await Promise.all([
 			fetchMilhasAccountById(userId, id),
-			fetchMilhasTransactions(userId, id, filter),
+			fetchMilhasTransactions(userId, id, filters),
 			fetchAccountCostBasis(userId, id),
 			fetchAccountExpiration90(userId, id),
 			fetchRedemptionMetrics(userId, id),
@@ -41,7 +97,6 @@ export default async function Page({ params, searchParams }: PageProps) {
 			<MilhasAccountDetail
 				account={account}
 				transactions={transactions}
-				filter={filter}
 				costBasis={costBasis}
 				expiring90={expiring90}
 				redemptionMetrics={redemptionMetrics}
