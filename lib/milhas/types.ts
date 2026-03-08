@@ -169,3 +169,38 @@ export type MilhasRedemptionMetricWithAccount = MilhasRedemptionMetric & {
 	accountName: string;
 	programName: string;
 };
+
+// ─── Redemption Simulator ─────────────────────────────────────────────────────
+
+/** A single FIFO lot slice that would be consumed by the simulated redemption. */
+export type SimulationLotConsumed = {
+	lotId: string;
+	/** ISO date string (YYYY-MM-DD). */
+	occurredAt: string;
+	/** ISO date string (YYYY-MM-DD) or null. */
+	expiresAt: string | null;
+	consumedAmount: number;
+	/** Proportional BRL cost for this slice. Null if the lot has no cost (free miles). */
+	costBrl: number | null;
+};
+
+export type MilhasRedemptionSimulation = {
+	milesAmount: number;
+	cashEquivalentBrl: number;
+	/** (cashEquivalentBrl / milesAmount) × 1,000 */
+	valuePer1000: number;
+	/** Account average acquisition cost per 1,000 miles. Null if no paid credit transactions. */
+	avgCostPer1000: number | null;
+	/** ((valuePer1000 / avgCostPer1000) − 1) × 100. Null when avgCostPer1000 unavailable. */
+	roiPercent: number | null;
+	/** Total proportional FIFO cost basis consumed. Null if consumed lots have no cost data. */
+	fifoCostConsumed: number | null;
+	/** cashEquivalentBrl − fifoCostConsumed. Null when fifoCostConsumed is null. */
+	netExtractedValue: number | null;
+	/** FIFO lots that would be consumed, oldest first. */
+	lotsConsumed: SimulationLotConsumed[];
+	/** Miles consumed that are expiring within 90 days. */
+	expiringMilesConsumed: number;
+	/** True when at least some consumed miles expire within 30 days. */
+	hasUrgentExpirationWarning: boolean;
+};

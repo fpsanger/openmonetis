@@ -22,7 +22,8 @@ import {
 	lotDeletionCheck,
 	releaseLotAllocations,
 } from "@/lib/milhas/fifo";
-import type { MilhasTransactionType } from "@/lib/milhas/types";
+import { simulateRedemption } from "@/lib/milhas/simulator";
+import type { MilhasRedemptionSimulation, MilhasTransactionType } from "@/lib/milhas/types";
 import { uuidSchema } from "@/lib/schemas/common";
 
 // ─── Shared monetary-value schema ─────────────────────────────────────────────
@@ -808,6 +809,52 @@ export async function transferMilhasAction(
 			success: true,
 			message: `Transferência concluída: ${destinationAmount.toLocaleString("pt-BR")} milhas creditadas na conta de destino.`,
 		};
+	} catch (error) {
+		return handleActionError(error);
+	}
+}
+
+// ─── Redemption Simulator ─────────────────────────────────────────────────────
+
+const simulateRedemptionSchema = z.object({
+	accountId: uuidSchema("Conta"),
+	milesAmount: z
+		.number({ message: "Informe a quantidade de milhas." })
+		.int("A quantidade de milhas deve ser um número inteiro.")
+		.positive("A quantidade de milhas deve ser positiva."),
+	cashEquivalentBrl: z
+		.number({ message: "Informe o valor equivalente em R$." })
+		.positive("O valor equivalente deve ser positivo."),
+});
+
+export async function simulateMilhasRedemptionAction(input: {
+	accountId: string;
+	milesAmount: number;
+	cashEquivalentBrl: number;
+}): Promise<ActionResult<MilhasRedemptionSimulation>> {
+	try {
+		const data = simulateRedemptionSchema.parse(input);
+		const user = await getUser();
+
+		// Ensure the account belongs to this user
+		const account = await db.query.milhasAccounts.findFirst({
+			where: and(
+				eq(milhasAccounts.id, data.accountId),
+				eq(milhasAccounts.userId, user.id),
+			),
+		});
+		if (!account) {
+			return { success: false, error: "Conta não encontrada." };
+		}
+
+		const simulation = await simulateRedemption(db, {
+			userId: user.id,
+			accountId: data.accountId,
+			milesAmount: data.milesAmount,
+			cashEquivalentBrl: data.cashEquivalentBrl,
+		});
+
+		return { success: true, message: "Simulação concluída.", data: simulation };
 	} catch (error) {
 		return handleActionError(error);
 	}

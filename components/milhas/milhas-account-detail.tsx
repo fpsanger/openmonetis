@@ -44,6 +44,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { MilhasRedemptionSimulator } from "./milhas-redemption-simulator";
 import { MilhasTransactionDialog } from "./milhas-transaction-dialog";
 import { MilhasTransactionFilters } from "./milhas-transaction-filters";
 
@@ -157,7 +158,13 @@ export function MilhasAccountDetail({
 						<h1 className="text-2xl font-semibold">{account.name}</h1>
 					</div>
 				</div>
-				<MilhasTransactionDialog accountId={account.id} otherAccounts={otherAccounts} />
+				<div className="flex items-center gap-2">
+					<MilhasRedemptionSimulator
+						accountId={account.id}
+						accountBalance={account.balance}
+					/>
+					<MilhasTransactionDialog accountId={account.id} otherAccounts={otherAccounts} />
+				</div>
 			</div>
 
 			{/* ── Metrics grid ──────────────────────────────────────────────── */}
